@@ -403,12 +403,15 @@ async function joinRoomOnline() {
   }
 
   // ---------- Wire UI ----------
-  function wireButtons() {
-    // Replace the Home-screen Two Phones buttons (we hook into those by overriding the global handlers)
-    // We'll provide new functions with same names so your onclick="createGame()" etc still works
-    window.createGame = createRoomOnline;
-    window.joinGame = joinRoomOnline;
+function wireButtons() {
+  if (!window.__createGameOrig && typeof window.createGame === "function") window.__createGameOrig = window.createGame;
+  if (!window.__joinGameOrig && typeof window.joinGame === "function") window.__joinGameOrig = window.joinGame;
 
+  window.createGame = createRoomOnline;
+  window.joinGame = joinRoomOnline;
+
+  ...
+}
     // Setup screen inputs save to Firebase on change/blur
     ["p1Name", "p2Name"].forEach((id) => {
       const el = $(id);
