@@ -147,69 +147,68 @@
   }
 
   // ---------- Firebase game state ----------
-  async function createRoomOnline() {
-    // We piggy-back on your existing createGame() (from multiplayer.js) which sets a global gameId variable.
-    // We'll also ensure the game has the right schema.
+async function createRoomOnline() {
+  // Call the original multiplayer.js function to create the room in Firebase
+  if (typeof window.__createGameOrig !== "function") {
+    // first time: store original createGame
     if (typeof createGame !== "function") {
       alert("createGame() not found. Make sure multiplayer.js is loaded.");
       return;
     }
-
-    // call existing createGame() to generate room + write turn/status
-    createGame();
-
-    // Your multiplayer.js keeps gameId in its own scope; we also show it in #room.
-    // We’ll read it back from the UI text (Room: ABC123) as a simple bridge.
-    setTimeout(async () => {
-      const roomText = $("room")?.textContent || "";
-      const m = roomText.match(/Room:\s*([A-Z0-9]+)/);
-      if (!m) {
-        alert("Could not detect room code. Try again.");
-        return;
-      }
-      const gid = m[1];
-
-      // Initialize full schema
-      await db.ref("games/" + gid).update({
-        status: "setup",
-        phase: "setup",
-        turn: "P1",
-        createdAt: Date.now(),
-      });
-
-      ensureIdentity();
-      await initRoomUIAfterJoin(gid);
-      attachLiveListener();
-    }, 300);
+    window.__createGameOrig = createGame;
   }
 
-  async function joinRoomOnline() {
+  window.__createGameOrig();
+
+  // Get room code from the global (set by multiplayer.js)
+  const gid = window.__CITY_ROOM;
+  if (!gid) {
+    alert("Room code not available yet. Try again.");
+    return;
+  }
+
+  // Initialize full schema
+  await db.ref("games/" + gid).update({
+    status: "setup",
+    phase: "setup",
+    turn: "P1",
+    createdAt: Date.now(),
+  });
+
+  ensureIdentity();
+  await initRoomUIAfterJoin(gid);
+  attachLiveListener();
+}
+
+async function joinRoomOnline() {
+  if (typeof window.__joinGameOrig !== "function") {
     if (typeof joinGame !== "function") {
       alert("joinGame() not found. Make sure multiplayer.js is loaded.");
       return;
     }
-    joinGame();
-
-    setTimeout(async () => {
-      const roomText = $("room")?.textContent || "";
-      const m = roomText.match(/Room:\s*([A-Z0-9]+)/);
-      if (!m) {
-        // If joinGame didn't write #room yet, prompt once here
-        const code = prompt("Enter Room Code");
-        if (!code) return;
-        $("room").textContent = "Room: " + code.toUpperCase();
-      }
-      const gid = (($("room")?.textContent || "").match(/Room:\s*([A-Z0-9]+)/) || [])[1];
-      if (!gid) {
-        alert("Could not detect room code. Try again.");
-        return;
-      }
-
-      ensureIdentity();
-      await initRoomUIAfterJoin(gid);
-      attachLiveListener();
-    }, 300);
+    window.__joinGameOrig = joinGame;
   }
+
+  window.__joinGameOrig();
+
+  // Prefer global room code set by multiplayer.js
+  let gid = window.__CITY_ROOM;
+
+  // Fallback: prompt once if missing
+  if (!gid) {
+    const code = prompt("Enter Room Code");
+    if (!code) return;
+    gid = code.toUpperCase();
+    window.__CITY_ROOM = gid;
+    // Also ensure the room label updates
+    const roomEl = $("room");
+    if (roomEl) roomEl.textContent = "Room: " + gid;
+  }
+
+  ensureIdentity();
+  await initRoomUIAfterJoin(gid);
+  attachLiveListener();
+}
 
   function attachLiveListener() {
     if (!state.gameId) return;
