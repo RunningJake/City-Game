@@ -31,6 +31,27 @@
           <button id="btnStart" class="btn btn-primary btn-block">Start</button>
         </div>
 
+        <!-- MULTIPLAYER (TWO PHONES) -->
+        <div class="card">
+          <h2 class="h2">Two Phones (Online)</h2>
+          <p class="muted">Create a room code and join from another phone.</p>
+
+          <div class="stack">
+            <button class="btn btn-secondary btn-block" onclick="createGame()">Create Room</button>
+            <button class="btn btn-secondary btn-block" onclick="joinGame()">Join Room</button>
+            <button class="btn btn-ghost btn-block" onclick="switchTurn()">Switch Turn (test)</button>
+          </div>
+
+          <div class="grid2 gap-top">
+            <div class="pill"><span class="muted tiny">Room</span><br><strong id="room">—</strong></div>
+            <div class="pill"><span class="muted tiny">Turn</span><br><strong id="turn">—</strong></div>
+          </div>
+
+          <p class="muted tiny gap-top">
+            Tip: Use “Switch Turn” just to confirm both phones sync. Next we’ll sync the full gameplay.
+          </p>
+        </div>
+
         <div class="card">
           <h2 class="h2">How to play</h2>
           <ol class="list">
@@ -160,7 +181,7 @@
           <p class="muted tiny" id="modalHint">Make sure the other player isn't looking 👀</p>
           <label class="field">
             <span>City</span>
-            <input id="secretCityInput" maxlength="60" placeholder="e.g., Montevideo" autocomplete="off" />
+            <input id="secretCityInput" maxlength="60" placeholder="e.g., Vienna" autocomplete="off" />
           </label>
           <div class="grid2">
             <button id="btnSaveCity" class="btn btn-primary btn-block">Save</button>
@@ -187,6 +208,12 @@
       <span class="muted tiny">Offline-ready • Add to Home Screen for a real “app” feel</span>
     </footer>
   </div>
+
+  <!-- Firebase (browser/compat build for GitHub Pages) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+  <script src="firebase.js"></script>
+  <script src="multiplayer.js"></script>
 
   <script src="app.js"></script>
   <script>
