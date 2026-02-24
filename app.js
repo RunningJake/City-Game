@@ -1,432 +1,695 @@
-// City Guess Game - Easy Mode (pass-and-play)
-// State machine: setup -> game(asking/answering/guessing/end)
+// app.js — rebuilt from scratch (Local + Online)
+// Online uses Firebase RTDB (db from firebase.js). No bundlers, works on GitHub Pages.
 
-const $ = (id) => document.getElementById(id);
+(() => {
+  const $ = (id) => document.getElementById(id);
 
-const SCREENS = {
-  home: $("screenHome"),
-  setup: $("screenSetup"),
-  game: $("screenGame"),
-};
-
-const STORAGE_KEY = "city_guess_game_v1";
-
-const QUICK_QUESTIONS = [
-  "Is your city in Africa?",
-  "Is your city in Asia?",
-  "Is your city in Europe?",
-  "Is your city in North America?",
-  "Is your city in South America?",
-  "Is your city in Oceania?",
-  "Is your city in the Eastern Hemisphere?",
-  "Is your city in the Western Hemisphere?",
-  "Is your city a national capital?",
-  "Is your city on the coast?",
-  "Is your city on a river?",
-  "Is your city landlocked?",
-  "Is your city in the EU?",
-  "Is your city in the UK?",
-  "Is your city in a country with over 100M people?",
-  "Is your city in a country with under 20M people?",
-  "Do most people speak Spanish in your city?",
-  "Do most people speak English in your city?",
-  "Is your city in the Southern Hemisphere?",
-  "Is your city north of the equator?",
-];
-
-function normalize(str){
-  return (str || "")
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "") // remove accents
-    .replace(/[^a-z0-9\s-]/g, "")
-    .trim()
-    .replace(/\s+/g, " ");
-}
-
-function fuzzyMatch(a, b){
-  // very lightweight: exact normalized or one contains the other (handles "Rio de Janeiro" vs "rio")
-  const A = normalize(a);
-  const B = normalize(b);
-  if(!A || !B) return false;
-  if(A === B) return true;
-  if(A.includes(B) || B.includes(A)) return true;
-  // allow small typos: compare by token overlap
-  const ta = new Set(A.split(" "));
-  const tb = new Set(B.split(" "));
-  let overlap = 0;
-  for (const t of ta) if (tb.has(t)) overlap++;
-  const denom = Math.max(ta.size, tb.size);
-  return denom > 0 && overlap / denom >= 0.66;
-}
-
-function defaultState(){
-  return {
-    screen: "home",
-    players: {
-      p1: { name: "Player 1", city: "" },
-      p2: { name: "Player 2", city: "" },
-    },
-    game: {
-      started: false,
-      turn: "p1",
-      phase: "setup", // setup | asking | answering | guessing | end
-      pendingQuestion: "",
-      log: [],
-      winner: "",
-      endMessage: "",
-    }
+  // Screens
+  const screens = {
+    home: $("screenHome"),
+    setup: $("screenSetup"),
+    game: $("screenGame"),
   };
-}
-
-let state = loadState() || defaultState();
-
-function saveState(){
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
-}
-
-function loadState(){
-  try{
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if(!raw) return null;
-    const s = JSON.parse(raw);
-    return s;
-  }catch(e){ return null; }
-}
-
-function showScreen(name){
-  Object.values(SCREENS).forEach(el => el.classList.add("hidden"));
-  SCREENS[name].classList.remove("hidden");
-  state.screen = name;
-  saveState();
-}
-
-function setText(id, text){
-  $(id).textContent = text;
-}
-
-function renderSetup(){
-  $("p1Name").value = state.players.p1.name || "Player 1";
-  $("p2Name").value = state.players.p2.name || "Player 2";
-
-  setText("p1CityStatus", state.players.p1.city ? "set" : "not set");
-  setText("p2CityStatus", state.players.p2.city ? "set" : "not set");
-
-  $("btnBeginGame").disabled = !(state.players.p1.city && state.players.p2.city);
-}
-
-function renderGame(){
-  const p = state.players;
-  const g = state.game;
-
-  const turnName = (g.turn === "p1" ? p.p1.name : p.p2.name);
-  setText("turnLabel", turnName);
-
-  const phasePretty = ({
-    asking: "Ask",
-    answering: "Answer",
-    guessing: "Guess",
-    end: "End",
-    setup: "Setup",
-  })[g.phase] || g.phase;
-
-  setText("phaseLabel", phasePretty);
-
-  // areas
-  $("askArea").classList.toggle("hidden", g.phase !== "asking");
-  $("answerArea").classList.toggle("hidden", g.phase !== "answering");
-  $("guessArea").classList.toggle("hidden", g.phase !== "guessing");
-  $("endArea").classList.toggle("hidden", g.phase !== "end");
-
-  $("btnAsk").disabled = g.phase !== "asking";
-  $("questionInput").disabled = g.phase !== "asking";
-
-  // pending question
-  setText("questionDisplay", g.pendingQuestion || "—");
-
-  // end
-  if (g.phase === "end") {
-    setText("endMessage", g.endMessage || "Game over.");
+  function showScreen(which) {
+    Object.entries(screens).forEach(([k, el]) => {
+      if (!el) return;
+      el.classList.toggle("hidden", k !== which);
+    });
   }
 
-  renderLog();
-}
+  // Modal helpers
+  function showModal(id, show) {
+    const el = $(id);
+    if (!el) return;
+    el.classList.toggle("hidden", !show);
+  }
 
-function renderLog(){
-  const log = $("log");
-  const items = state.game.log.slice().reverse();
-  log.innerHTML = items.map((m) => {
-    const who = m.by === "p1" ? state.players.p1.name : state.players.p2.name;
-    const target = m.to === "p1" ? state.players.p1.name : state.players.p2.name;
-    if (m.type === "qa"){
-      return `<div class="item"><span class="tag">${escapeHtml(who)}</span> → <span class="tag2">${escapeHtml(target)}</span><br>
-        Q: ${escapeHtml(m.q)}<br>A: <strong>${escapeHtml(m.a)}</strong></div>`;
-    }
-    if (m.type === "guess"){
-      return `<div class="item"><span class="tag">${escapeHtml(who)}</span> guessed <strong>${escapeHtml(m.guess)}</strong> → ${escapeHtml(m.result)}</div>`;
-    }
-    return `<div class="item">${escapeHtml(JSON.stringify(m))}</div>`;
-  }).join("") || `<div class="muted tiny">No questions yet.</div>`;
-}
+  // Quick questions
+  const QUICK = [
+    "Is your city in Europe?",
+    "Is your city in Asia?",
+    "Is your city in Africa?",
+    "Is your city in North America?",
+    "Is your city in South America?",
+    "Is your city in Oceania?",
+    "Is your city in the Northern Hemisphere?",
+    "Is your city in the Southern Hemisphere?",
+    "Is your city coastal?",
+    "Is your city a national capital?",
+    "Is your city in a country with over 100M people?",
+    "Does your city have a metro population over 2M?",
+    "Is your city on an island?",
+    "Is your city in the EU?",
+    "Is your city in the U.S.?",
+    "Do most people speak Spanish in your city?",
+    "Do most people speak English in your city?",
+  ];
 
-function escapeHtml(s){
-  return (s||"").replace(/[&<>"']/g, (c)=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
-}
+  // ---------------------------
+  // Shared UI elements
+  // ---------------------------
+  const els = {
+    btnReset: $("btnReset"),
+    btnBackHome: $("btnBackHome"),
+    btnStartLocal: $("btnStartLocal"),
+    btnCreateRoom: $("btnCreateRoom"),
+    btnJoinRoom: $("btnJoinRoom"),
 
-function swapTurn(){
-  state.game.turn = state.game.turn === "p1" ? "p2" : "p1";
-}
+    modeLabel: $("modeLabel"),
+    setupHint: $("setupHint"),
+    roomLabel: $("roomLabel"),
+    roleLabel: $("roleLabel"),
+    roomLabel2: $("roomLabel2"),
+    onlineStatus: $("onlineStatus"),
 
-function currentPlayer(){
-  return state.game.turn;
-}
-function otherPlayer(){
-  return state.game.turn === "p1" ? "p2" : "p1";
-}
+    p1Name: $("p1Name"),
+    p2Name: $("p2Name"),
+    btnSetP1: $("btnSetP1"),
+    btnSetP2: $("btnSetP2"),
+    p1CityStatus: $("p1CityStatus"),
+    p2CityStatus: $("p2CityStatus"),
+    btnBeginGame: $("btnBeginGame"),
 
-function startGame(){
-  state.game.started = true;
-  state.game.turn = "p1";
-  state.game.phase = "asking";
-  state.game.pendingQuestion = "";
-  state.game.winner = "";
-  state.game.endMessage = "";
-  // keep log if you want; default keep
-  saveState();
-  showScreen("game");
-  renderGame();
-}
+    turnLabel: $("turnLabel"),
+    phaseLabel: $("phaseLabel"),
 
-function resetAll(){
-  state = defaultState();
-  saveState();
-  showScreen("home");
-  renderSetup();
-  renderGame();
-}
+    askArea: $("askArea"),
+    answerArea: $("answerArea"),
+    guessArea: $("guessArea"),
+    endArea: $("endArea"),
 
-function rematchSameCities(){
-  state.game = {
-    started: true,
-    turn: "p1",
-    phase: "asking",
-    pendingQuestion: "",
-    log: [],
-    winner: "",
-    endMessage: "",
+    questionInput: $("questionInput"),
+    btnAsk: $("btnAsk"),
+    btnQuick: $("btnQuick"),
+    btnGuess: $("btnGuess"),
+
+    questionDisplay: $("questionDisplay"),
+    btnYes: $("btnYes"),
+    btnNo: $("btnNo"),
+
+    guessInput: $("guessInput"),
+    btnSubmitGuess: $("btnSubmitGuess"),
+    btnCancelGuess: $("btnCancelGuess"),
+
+    endMessage: $("endMessage"),
+    btnRematch: $("btnRematch"),
+    btnToSetup: $("btnToSetup"),
+
+    btnClearLog: $("btnClearLog"),
+    log: $("log"),
+
+    // modals
+    modal: $("modal"),
+    quickModal: $("quickModal"),
+    secretCityInput: $("secretCityInput"),
+    btnSaveCity: $("btnSaveCity"),
+    btnCancelCity: $("btnCancelCity"),
+    btnCloseModal: $("btnCloseModal"),
+    modalTitle: $("modalTitle"),
+    modalHint: $("modalHint"),
+
+    quickList: $("quickList"),
+    btnCloseQuick: $("btnCloseQuick"),
   };
-  saveState();
-  showScreen("game");
-  renderGame();
-}
 
-function newCities(){
-  state.players.p1.city = "";
-  state.players.p2.city = "";
-  state.game = defaultState().game;
-  saveState();
-  showScreen("setup");
-  renderSetup();
-}
-
-let modalTarget = null; // "p1" or "p2"
-
-function openCityModal(target){
-  modalTarget = target;
-  $("secretCityInput").value = "";
-  setText("modalTitle", `Enter secret city (${target === "p1" ? state.players.p1.name : state.players.p2.name})`);
-  $("modal").classList.remove("hidden");
-  setTimeout(()=> $("secretCityInput").focus(), 50);
-}
-function closeCityModal(){
-  $("modal").classList.add("hidden");
-  modalTarget = null;
-}
-
-function openQuickModal(){
-  const list = $("quickList");
-  list.innerHTML = QUICK_QUESTIONS.map(q => `<button class="btn btn-secondary btn-block" data-q="${escapeHtml(q)}">${escapeHtml(q)}</button>`).join("");
-  $("quickModal").classList.remove("hidden");
-}
-function closeQuickModal(){
-  $("quickModal").classList.add("hidden");
-}
-
-function endGame(message, winner){
-  state.game.phase = "end";
-  state.game.winner = winner || "";
-  state.game.endMessage = message || "Game over.";
-  saveState();
-  renderGame();
-}
-
-// --- Events ---
-$("btnStart").addEventListener("click", () => {
-  showScreen("setup");
-  state.game.phase = "setup";
-  saveState();
-  renderSetup();
-});
-
-$("btnBackHome").addEventListener("click", () => {
-  showScreen("home");
-});
-
-$("p1Name").addEventListener("input", (e) => {
-  state.players.p1.name = (e.target.value || "Player 1").trim() || "Player 1";
-  saveState();
-  renderSetup();
-});
-$("p2Name").addEventListener("input", (e) => {
-  state.players.p2.name = (e.target.value || "Player 2").trim() || "Player 2";
-  saveState();
-  renderSetup();
-});
-
-$("btnSetP1").addEventListener("click", () => openCityModal("p1"));
-$("btnSetP2").addEventListener("click", () => openCityModal("p2"));
-$("btnCloseModal").addEventListener("click", closeCityModal);
-$("btnCancelCity").addEventListener("click", closeCityModal);
-
-$("btnSaveCity").addEventListener("click", () => {
-  const city = $("secretCityInput").value.trim();
-  if(!city) return;
-  if(modalTarget){
-    state.players[modalTarget].city = city;
-    saveState();
-    renderSetup();
+  function logLine(text) {
+    if (!els.log) return;
+    const div = document.createElement("div");
+    div.className = "logline";
+    div.textContent = text;
+    els.log.prepend(div);
   }
-  closeCityModal();
-});
+  function clearLogUI() { if (els.log) els.log.innerHTML = ""; }
 
-$("btnBeginGame").addEventListener("click", () => startGame());
-
-$("btnReset").addEventListener("click", () => {
-  if(confirm("Reset everything? This clears cities and log.")){
-    resetAll();
+  function normalizeCity(s) {
+    return (s || "")
+      .toLowerCase()
+      .trim()
+      .replace(/[^\p{L}\p{N}\s]/gu, "")
+      .replace(/\s+/g, " ");
   }
-});
 
-$("btnAsk").addEventListener("click", () => {
-  if(state.game.phase !== "asking") return;
-  const q = $("questionInput").value.trim();
-  if(!q) return;
-  state.game.pendingQuestion = q;
-  $("questionInput").value = "";
-  state.game.phase = "answering";
-  saveState();
-  renderGame();
-});
+  // ---------------------------
+  // LOCAL MODE (pass-and-play)
+  // ---------------------------
+  const local = {
+    p1: { name: "Player 1", city: "" },
+    p2: { name: "Player 2", city: "" },
+    turn: "P1",
+    phase: "setup", // setup | ask | answer | guess | end
+    currentQuestion: "",
+    winner: null,
+  };
 
-$("btnQuick").addEventListener("click", () => {
-  if(state.game.phase !== "asking") return;
-  openQuickModal();
-});
+  let activeMode = null; // "local" | "online"
+  let localEditing = null; // "P1" | "P2"
 
-$("btnCloseQuick").addEventListener("click", closeQuickModal);
-$("quickList").addEventListener("click", (e) => {
-  const btn = e.target.closest("button[data-q]");
-  if(!btn) return;
-  const q = btn.getAttribute("data-q");
-  $("questionInput").value = q;
-  closeQuickModal();
-  $("questionInput").focus();
-});
+  function localSyncSetupUI() {
+    els.modeLabel.textContent = "Local";
+    els.roomLabel2.textContent = "—";
+    els.setupHint.textContent = "One phone pass-and-play. Hand the phone over when setting cities.";
+    els.p1Name.disabled = false;
+    els.p2Name.disabled = false;
+    els.btnSetP1.disabled = false;
+    els.btnSetP2.disabled = false;
+    els.btnBeginGame.disabled = !(!!local.p1.city && !!local.p2.city);
 
-function answer(val){
-  if(state.game.phase !== "answering") return;
-  const by = currentPlayer();      // asker
-  const to = otherPlayer();        // answerer
-  const q = state.game.pendingQuestion;
+    els.p1Name.value = local.p1.name || "Player 1";
+    els.p2Name.value = local.p2.name || "Player 2";
+    els.p1CityStatus.textContent = local.p1.city ? "set" : "not set";
+    els.p2CityStatus.textContent = local.p2.city ? "set" : "not set";
+  }
 
-  state.game.log.push({
-    type: "qa",
-    by, to,
-    q,
-    a: val,
-    t: Date.now(),
+  function localSyncGameUI() {
+    els.turnLabel.textContent = local.turn;
+    els.phaseLabel.textContent = local.phase;
+
+    const showAsk = local.phase === "ask";
+    const showAnswer = local.phase === "answer";
+    const showGuess = local.phase === "guess";
+    const showEnd = local.phase === "end";
+
+    els.askArea.classList.toggle("hidden", !showAsk);
+    els.answerArea.classList.toggle("hidden", !showAnswer);
+    els.guessArea.classList.toggle("hidden", !showGuess);
+    els.endArea.classList.toggle("hidden", !showEnd);
+
+    els.btnAsk.disabled = !showAsk;
+    els.btnQuick.disabled = !showAsk;
+    els.btnGuess.disabled = !showAsk;
+
+    els.btnYes.disabled = !showAnswer;
+    els.btnNo.disabled = !showAnswer;
+
+    els.questionDisplay.textContent = local.currentQuestion || "—";
+
+    if (showEnd && local.winner) {
+      const name = local.winner === "P1" ? local.p1.name : local.p2.name;
+      els.endMessage.textContent = `${name} wins!`;
+    }
+  }
+
+  function localBegin() {
+    local.turn = "P1";
+    local.phase = "ask";
+    local.currentQuestion = "";
+    local.winner = null;
+    clearLogUI();
+    logLine("Game started!");
+    showScreen("game");
+    localSyncGameUI();
+  }
+
+  function localAsk() {
+    const q = (els.questionInput.value || "").trim();
+    if (!q) return;
+    local.currentQuestion = q;
+    local.phase = "answer";
+    logLine(`${local.turn} asked: ${q}`);
+    els.questionInput.value = "";
+    localSyncGameUI();
+  }
+
+  function localAnswer(ans) {
+    const answerer = local.turn === "P1" ? "P2" : "P1";
+    logLine(`${answerer} answered: ${ans}`);
+    local.currentQuestion = "";
+    local.turn = answerer;
+    local.phase = "ask";
+    localSyncGameUI();
+  }
+
+  function localOpenGuess() { local.phase = "guess"; localSyncGameUI(); }
+  function localCancelGuess() { local.phase = "ask"; localSyncGameUI(); }
+
+  function localSubmitGuess() {
+    const guess = (els.guessInput.value || "").trim();
+    if (!guess) return;
+    const opponent = local.turn === "P1" ? "P2" : "P1";
+    const opponentCity = opponent === "P1" ? local.p1.city : local.p2.city;
+    const ok = normalizeCity(guess) === normalizeCity(opponentCity);
+
+    if (ok) {
+      local.phase = "end";
+      local.winner = local.turn;
+      logLine(`${local.turn} guessed "${guess}" — CORRECT!`);
+    } else {
+      logLine(`${local.turn} guessed "${guess}" — wrong.`);
+      local.turn = opponent;
+      local.phase = "ask";
+    }
+    els.guessInput.value = "";
+    localSyncGameUI();
+  }
+
+  function localRematch() {
+    local.turn = "P1";
+    local.phase = "ask";
+    local.currentQuestion = "";
+    local.winner = null;
+    clearLogUI();
+    logLine("Rematch!");
+    localSyncGameUI();
+  }
+
+  function localNewCities() {
+    local.p1.city = "";
+    local.p2.city = "";
+    local.phase = "setup";
+    showScreen("setup");
+    localSyncSetupUI();
+  }
+
+  // ---------------------------
+  // ONLINE MODE (two phones)
+  // ---------------------------
+  const LS_KEY = "city_guess_online_identity_v2";
+  const online = {
+    gameId: null,
+    role: null,     // "P1" | "P2"
+    playerKey: null,
+    liveRef: null,
+    logRef: null,
+    logListener: null,
+  };
+
+  function ensureIdentity() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(LS_KEY) || "null");
+      if (saved?.playerKey) return saved.playerKey;
+    } catch {}
+    const pk = "p_" + Math.random().toString(36).slice(2, 10);
+    localStorage.setItem(LS_KEY, JSON.stringify({ playerKey: pk }));
+    return pk;
+  }
+
+  function onlineRef(path="") {
+    return db.ref("games/" + online.gameId + (path ? "/" + path : ""));
+  }
+
+  async function claimRole() {
+    const playersRef = onlineRef("players");
+    const snap = await playersRef.once("value");
+    const players = snap.val() || {};
+
+    for (const r of ["P1", "P2"]) {
+      if (players?.[r]?.owner === online.playerKey) {
+        online.role = r;
+        await playersRef.child(r).update({ online: true, lastSeen: Date.now() });
+        return r;
+      }
+    }
+
+    for (const r of ["P1", "P2"]) {
+      if (!players?.[r]?.owner) {
+        await playersRef.child(r).update({
+          owner: online.playerKey,
+          online: true,
+          joinedAt: Date.now(),
+          lastSeen: Date.now()
+        });
+        online.role = r;
+        return r;
+      }
+    }
+
+    online.role = null;
+    return null;
+  }
+
+  function syncOnlineSetupUI(hint) {
+    els.modeLabel.textContent = "Online";
+    els.roomLabel2.textContent = online.gameId || "—";
+    els.roomLabel.textContent = online.gameId || "—";
+    els.roleLabel.textContent = online.role || "—";
+    els.onlineStatus.textContent = "Firebase: connected";
+
+    els.setupHint.textContent = hint || "Set your name & city. Player 1 starts the game.";
+
+    const isP1 = online.role === "P1";
+    els.p1Name.disabled = !isP1;
+    els.btnSetP1.disabled = !isP1;
+    els.p2Name.disabled = isP1;
+    els.btnSetP2.disabled = isP1;
+
+    els.btnBeginGame.disabled = !isP1;
+  }
+
+  function attachOnlineListeners() {
+    if (online.liveRef) online.liveRef.off();
+    if (online.logRef && online.logListener) online.logRef.off("child_added", online.logListener);
+
+    online.liveRef = onlineRef();
+    online.logRef = onlineRef("log");
+
+    online.liveRef.on("value", (snap) => {
+      const g = snap.val();
+      if (!g) return;
+
+      const p1Set = !!g.players?.P1?.city;
+      const p2Set = !!g.players?.P2?.city;
+      els.p1CityStatus.textContent = p1Set ? "set" : "not set";
+      els.p2CityStatus.textContent = p2Set ? "set" : "not set";
+
+      if (g.players?.P1?.name && els.p1Name.disabled) els.p1Name.value = g.players.P1.name;
+      if (g.players?.P2?.name && els.p2Name.disabled) els.p2Name.value = g.players.P2.name;
+
+      if (online.role === "P1") {
+        els.btnBeginGame.disabled = !(p1Set && p2Set && g.phase === "setup");
+      }
+
+      if (g.phase && g.phase !== "setup") showScreen("game");
+
+      els.turnLabel.textContent = g.turn || "—";
+      els.phaseLabel.textContent = g.phase || "—";
+
+      const myTurn = g.turn === online.role;
+
+      els.askArea.classList.toggle("hidden", g.phase !== "ask");
+      els.answerArea.classList.toggle("hidden", g.phase !== "answer");
+      els.guessArea.classList.toggle("hidden", g.phase !== "guess");
+      els.endArea.classList.toggle("hidden", g.phase !== "end");
+
+      els.btnAsk.disabled = !(myTurn && g.phase === "ask");
+      els.btnQuick.disabled = !(myTurn && g.phase === "ask");
+      els.btnGuess.disabled = !(myTurn && g.phase === "ask");
+
+      els.btnYes.disabled = !(!myTurn && g.phase === "answer");
+      els.btnNo.disabled = !(!myTurn && g.phase === "answer");
+
+      els.questionDisplay.textContent = g.currentQuestion || "—";
+
+      if (g.phase === "end" && g.winner) {
+        const nm = g.players?.[g.winner]?.name || g.winner;
+        els.endMessage.textContent = `${nm} wins!`;
+      }
+    }, (err) => {
+      console.error(err);
+      els.onlineStatus.textContent = "Firebase: listener error";
+      alert("Listener error: " + (err?.message || err));
+    });
+
+    clearLogUI();
+    online.logListener = (snap) => {
+      const v = snap.val();
+      if (v?.text) logLine(v.text);
+    };
+    online.logRef.limitToLast(100).on("child_added", online.logListener);
+  }
+
+  async function onlineCreateRoom() {
+    if (typeof db === "undefined") { alert("Firebase not ready. Check firebase.js."); return; }
+    online.playerKey = ensureIdentity();
+    const gid = Math.random().toString(36).slice(2, 8).toUpperCase();
+    online.gameId = gid;
+
+    await db.ref("games/" + gid).set({
+      status: "setup",
+      phase: "setup",
+      turn: "P1",
+      createdAt: Date.now(),
+      players: {
+        P1: { owner: online.playerKey, online: true, joinedAt: Date.now(), name: "Player 1", city: null },
+        P2: { owner: null, online: false, joinedAt: null, name: "Player 2", city: null }
+      }
+    });
+
+    await claimRole();
+    attachOnlineListeners();
+    showScreen("setup");
+    syncOnlineSetupUI("You are Player 1. Set your name & city. Share the room code with Player 2.");
+    alert("Room Code: " + gid);
+  }
+
+  async function onlineJoinRoom() {
+    if (typeof db === "undefined") { alert("Firebase not ready. Check firebase.js."); return; }
+    online.playerKey = ensureIdentity();
+
+    const code = prompt("Enter Room Code");
+    if (!code) return;
+    const gid = code.toUpperCase();
+    online.gameId = gid;
+
+    const snap = await db.ref("games/" + gid).once("value");
+    if (!snap.exists()) { alert("Room not found: " + gid); online.gameId = null; return; }
+
+    await claimRole();
+    if (!online.role) { alert("Room is full."); online.gameId = null; return; }
+
+    attachOnlineListeners();
+    showScreen("setup");
+    syncOnlineSetupUI(`You are ${online.role}. Set your name & city.`);
+  }
+
+  async function onlineSaveMyName() {
+    if (!online.role) return;
+    const input = online.role === "P1" ? els.p1Name : els.p2Name;
+    const name = (input.value || "").trim().slice(0, 18) || online.role;
+    await onlineRef(`players/${online.role}/name`).set(name);
+  }
+
+  async function onlineSaveMyCity(city) {
+    if (!online.role) return;
+    const clean = (city || "").trim().slice(0, 60);
+    if (!clean) return;
+    await onlineRef(`players/${online.role}/city`).set(clean);
+  }
+
+  async function onlineBeginGame() {
+    const snap = await onlineRef().once("value");
+    const g = snap.val();
+    if (!g?.players?.P1?.city || !g?.players?.P2?.city) { alert("Both players must set a city first."); return; }
+    await onlineRef().update({ status: "playing", phase: "ask", turn: "P1", currentQuestion: "", winner: null, lastAnswer: null });
+    await onlineRef("log").push({ t: Date.now(), text: "Game started!" });
+  }
+
+  async function onlineAskQuestion() {
+    const q = (els.questionInput.value || "").trim();
+    if (!q) return;
+    await onlineRef().update({ currentQuestion: q, phase: "answer" });
+    await onlineRef("log").push({ t: Date.now(), text: `${online.role} asked: ${q}` });
+    els.questionInput.value = "";
+  }
+
+  async function onlineAnswer(ans) {
+    const snap = await onlineRef().once("value");
+    const g = snap.val();
+    if (!g) return;
+    const nextTurn = g.turn === "P1" ? "P2" : "P1";
+    await onlineRef().update({ lastAnswer: ans, phase: "ask", turn: nextTurn, currentQuestion: "" });
+    await onlineRef("log").push({ t: Date.now(), text: `${online.role} answered: ${ans}` });
+  }
+
+  async function onlineOpenGuess() { await onlineRef().update({ phase: "guess" }); }
+  async function onlineCancelGuess() { await onlineRef().update({ phase: "ask" }); }
+
+  async function onlineSubmitGuess() {
+    const guess = (els.guessInput.value || "").trim();
+    if (!guess) return;
+
+    const snap = await onlineRef().once("value");
+    const g = snap.val();
+    if (!g) return;
+
+    const opponent = online.role === "P1" ? "P2" : "P1";
+    const opponentCity = g.players?.[opponent]?.city || "";
+    const ok = normalizeCity(guess) === normalizeCity(opponentCity);
+
+    if (ok) {
+      await onlineRef().update({ phase: "end", winner: online.role });
+      await onlineRef("log").push({ t: Date.now(), text: `${online.role} guessed "${guess}" — CORRECT!` });
+    } else {
+      const nextTurn = g.turn === "P1" ? "P2" : "P1";
+      await onlineRef().update({ phase: "ask", turn: nextTurn });
+      await onlineRef("log").push({ t: Date.now(), text: `${online.role} guessed "${guess}" — wrong.` });
+    }
+    els.guessInput.value = "";
+  }
+
+  async function onlineRematch() {
+    await onlineRef().update({ phase: "ask", turn: "P1", currentQuestion: "", winner: null, lastAnswer: null, status: "playing" });
+    await onlineRef("log").push({ t: Date.now(), text: "Rematch!" });
+  }
+
+  async function onlineNewCities() {
+    await onlineRef().update({ phase: "setup", status: "setup", currentQuestion: "", winner: null });
+    await onlineRef("players/P1/city").set(null);
+    await onlineRef("players/P2/city").set(null);
+    await onlineRef("log").push({ t: Date.now(), text: "New cities needed." });
+    showScreen("setup");
+  }
+
+  async function onlineClearLog() { await onlineRef("log").set(null); clearLogUI(); }
+
+  // ---------------------------
+  // Shared modal logic
+  // ---------------------------
+  function openCityModal(forRole, hintText) {
+    els.modalTitle.textContent = forRole === "P1" ? "Player 1: secret city" : "Player 2: secret city";
+    els.modalHint.textContent = hintText || "Make sure the other player isn't looking 👀";
+    els.secretCityInput.value = "";
+    showModal("modal", true);
+    localEditing = forRole;
+    els.secretCityInput.focus();
+  }
+
+  function closeCityModal() { showModal("modal", false); localEditing = null; }
+
+  function buildQuickList() {
+    els.quickList.innerHTML = "";
+    QUICK.forEach((q) => {
+      const item = document.createElement("div");
+      item.className = "quickitem";
+      item.textContent = q;
+      item.addEventListener("click", () => {
+        els.questionInput.value = q;
+        showModal("quickModal", false);
+      });
+      els.quickList.appendChild(item);
+    });
+  }
+
+  function resetAll() {
+    showScreen("home");
+    clearLogUI();
+    els.questionInput.value = "";
+    els.guessInput.value = "";
+    els.questionDisplay.textContent = "—";
+    els.endMessage.textContent = "—";
+
+    // local reset
+    local.p1 = { name: "Player 1", city: "" };
+    local.p2 = { name: "Player 2", city: "" };
+    local.turn = "P1";
+    local.phase = "setup";
+    local.currentQuestion = "";
+    local.winner = null;
+
+    // online detach
+    if (online.liveRef) online.liveRef.off();
+    if (online.logRef && online.logListener) online.logRef.off("child_added", online.logListener);
+    online.liveRef = null; online.logRef = null; online.logListener = null;
+    online.gameId = null;
+    online.role = null;
+
+    els.roomLabel.textContent = "—";
+    els.roleLabel.textContent = "—";
+    els.onlineStatus.textContent = "Firebase: —";
+  }
+
+  // ---------------------------
+  // Wire UI
+  // ---------------------------
+  els.btnReset.addEventListener("click", resetAll);
+  els.btnBackHome.addEventListener("click", () => showScreen("home"));
+
+  els.btnStartLocal.addEventListener("click", () => {
+    activeMode = "local";
+    showScreen("setup");
+    localSyncSetupUI();
   });
 
-  state.game.pendingQuestion = "";
-  // swap turn after answer
-  swapTurn();
-  state.game.phase = "asking";
-  saveState();
-  renderGame();
-}
-
-$("btnYes").addEventListener("click", ()=>answer("Yes"));
-$("btnNo").addEventListener("click", ()=>answer("No"));
-
-$("btnGuess").addEventListener("click", () => {
-  if(state.game.phase !== "asking") return;
-  state.game.phase = "guessing";
-  $("guessInput").value = "";
-  saveState();
-  renderGame();
-  setTimeout(()=> $("guessInput").focus(), 50);
-});
-
-$("btnCancelGuess").addEventListener("click", () => {
-  if(state.game.phase !== "guessing") return;
-  state.game.phase = "asking";
-  saveState();
-  renderGame();
-});
-
-$("btnSubmitGuess").addEventListener("click", () => {
-  if(state.game.phase !== "guessing") return;
-  const guess = $("guessInput").value.trim();
-  if(!guess) return;
-
-  const by = currentPlayer();
-  const target = otherPlayer();
-  const secret = state.players[target].city;
-
-  const correct = fuzzyMatch(guess, secret);
-
-  state.game.log.push({
-    type: "guess",
-    by,
-    to: target,
-    guess,
-    result: correct ? "CORRECT ✅" : "Wrong ❌",
-    t: Date.now(),
+  els.btnCreateRoom.addEventListener("click", async () => {
+    activeMode = "online";
+    try { await onlineCreateRoom(); } catch (e) { console.error(e); alert(e?.message || e); }
   });
 
-  if(correct){
-    const winnerName = (by === "p1" ? state.players.p1.name : state.players.p2.name);
-    const msg = `${winnerName} wins! The city was “${secret}”.`;
-    endGame(msg, by);
-    return;
-  } else {
-    // penalty: lose your turn (swap turn) and continue
-    swapTurn();
-    state.game.phase = "asking";
-    saveState();
-    renderGame();
-  }
-});
+  els.btnJoinRoom.addEventListener("click", async () => {
+    activeMode = "online";
+    try { await onlineJoinRoom(); } catch (e) { console.error(e); alert(e?.message || e); }
+  });
 
-$("btnClearLog").addEventListener("click", () => {
-  if(confirm("Clear the log?")){
-    state.game.log = [];
-    saveState();
-    renderGame();
-  }
-});
+  els.p1Name.addEventListener("blur", async () => {
+    if (activeMode === "local") local.p1.name = (els.p1Name.value || "Player 1").trim().slice(0, 18);
+    if (activeMode === "online" && online.role === "P1") await onlineSaveMyName();
+  });
+  els.p2Name.addEventListener("blur", async () => {
+    if (activeMode === "local") local.p2.name = (els.p2Name.value || "Player 2").trim().slice(0, 18);
+    if (activeMode === "online" && online.role === "P2") await onlineSaveMyName();
+  });
 
-$("btnRematch").addEventListener("click", rematchSameCities);
-$("btnToSetup").addEventListener("click", newCities);
+  els.btnSetP1.addEventListener("click", () => {
+    if (activeMode === "local") return openCityModal("P1", "Hand the phone to Player 1 👀");
+    if (activeMode === "online" && online.role === "P1") return openCityModal("P1", "Only Player 1 can set this.");
+  });
+  els.btnSetP2.addEventListener("click", () => {
+    if (activeMode === "local") return openCityModal("P2", "Hand the phone to Player 2 👀");
+    if (activeMode === "online" && online.role === "P2") return openCityModal("P2", "Only Player 2 can set this.");
+  });
 
-// Restore on load
-(function boot(){
-  // If game was mid-phase, render appropriately
-  showScreen(state.screen || "home");
+  els.btnSaveCity.addEventListener("click", async () => {
+    const city = (els.secretCityInput.value || "").trim();
+    if (!city) return;
 
-  // ensure phase sanity
-  if(state.screen === "setup") renderSetup();
-  if(state.screen === "game") renderGame();
+    if (activeMode === "local") {
+      if (localEditing === "P1") local.p1.city = city;
+      if (localEditing === "P2") local.p2.city = city;
+      closeCityModal();
+      localSyncSetupUI();
+    } else if (activeMode === "online") {
+      await onlineSaveMyCity(city);
+      await onlineSaveMyName();
+      closeCityModal();
+    }
+  });
 
-  // if cities exist but screen is home, that's okay.
+  els.btnCancelCity.addEventListener("click", closeCityModal);
+  els.btnCloseModal.addEventListener("click", closeCityModal);
+
+  els.btnBeginGame.addEventListener("click", async () => {
+    if (activeMode === "local") return localBegin();
+    if (activeMode === "online") return onlineBeginGame();
+  });
+
+  els.btnQuick.addEventListener("click", () => showModal("quickModal", true));
+  els.btnCloseQuick.addEventListener("click", () => showModal("quickModal", false));
+
+  els.btnAsk.addEventListener("click", async () => {
+    if (activeMode === "local") return localAsk();
+    if (activeMode === "online") return onlineAskQuestion();
+  });
+
+  els.btnYes.addEventListener("click", async () => {
+    if (activeMode === "local") return localAnswer("Yes");
+    if (activeMode === "online") return onlineAnswer("Yes");
+  });
+
+  els.btnNo.addEventListener("click", async () => {
+    if (activeMode === "local") return localAnswer("No");
+    if (activeMode === "online") return onlineAnswer("No");
+  });
+
+  els.btnGuess.addEventListener("click", async () => {
+    if (activeMode === "local") return localOpenGuess();
+    if (activeMode === "online") return onlineOpenGuess();
+  });
+
+  els.btnCancelGuess.addEventListener("click", async () => {
+    if (activeMode === "local") return localCancelGuess();
+    if (activeMode === "online") return onlineCancelGuess();
+  });
+
+  els.btnSubmitGuess.addEventListener("click", async () => {
+    if (activeMode === "local") return localSubmitGuess();
+    if (activeMode === "online") return onlineSubmitGuess();
+  });
+
+  els.btnRematch.addEventListener("click", async () => {
+    if (activeMode === "local") return localRematch();
+    if (activeMode === "online") return onlineRematch();
+  });
+
+  els.btnToSetup.addEventListener("click", async () => {
+    if (activeMode === "local") return localNewCities();
+    if (activeMode === "online") return onlineNewCities();
+  });
+
+  els.btnClearLog.addEventListener("click", async () => {
+    if (activeMode === "local") { clearLogUI(); return; }
+    if (activeMode === "online") return onlineClearLog();
+  });
+
+  // boot
+  buildQuickList();
+  showScreen("home");
 })();

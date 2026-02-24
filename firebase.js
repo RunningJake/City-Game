@@ -1,3 +1,6 @@
+// firebase.js
+// Firebase config for City Guess (Realtime Database)
+
 const firebaseConfig = {
   apiKey: "AIzaSyCXjYrXjXo5zHBTtfwvfbZHH-TksGEzYlc",
   authDomain: "city-game-d5837.firebaseapp.com",

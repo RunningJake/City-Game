@@ -1,7 +1,7 @@
 {
-  "name": "City Guess Game",
-  "short_name": "CityGuess",
-  "start_url": ".",
+  "name": "City Guess",
+  "short_name": "City Guess",
+  "start_url": "./?source=pwa",
   "display": "standalone",
   "background_color": "#0b0f14",
   "theme_color": "#0b0f14",

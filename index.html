@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>City Guess Game</title>
-  <link rel="manifest" href="manifest.json">
+  <title>City Guess</title>
   <meta name="theme-color" content="#0b0f14">
+  <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -16,40 +16,35 @@
         <span class="logo">★</span>
         <span class="title">City Guess</span>
       </div>
-      <button id="btnReset" class="btn btn-ghost" title="Reset game">Reset</button>
+      <div class="top-actions">
+        <button id="btnReset" class="btn btn-ghost" title="Reset">Reset</button>
+      </div>
     </header>
 
     <main class="panel">
       <!-- HOME -->
       <section id="screenHome" class="screen">
-        <h1 class="h1">City Guess Game</h1>
-        <p class="muted">Pass-and-play, phone-friendly, pixel vibes.</p>
+        <h1 class="h1">City Guess</h1>
+        <p class="muted">20-questions vibes. Pixel-ish. Phone-first.</p>
 
-        <div class="card">
-          <h2 class="h2">Easy Mode</h2>
-          <p class="muted">One phone, two players. Secret cities stay hidden.</p>
-          <button id="btnStart" class="btn btn-primary btn-block">Start</button>
-        </div>
-
-        <!-- MULTIPLAYER (TWO PHONES) -->
         <div class="card">
           <h2 class="h2">Two Phones (Online)</h2>
-          <p class="muted">Create a room code and join from another phone.</p>
-
+          <p class="muted">Create a room code, join from another phone.</p>
           <div class="stack">
-            <button class="btn btn-secondary btn-block" onclick="createGame()">Create Room</button>
-            <button class="btn btn-secondary btn-block" onclick="joinGame()">Join Room</button>
-            <button class="btn btn-ghost btn-block" onclick="switchTurn()">Switch Turn (test)</button>
+            <button id="btnCreateRoom" class="btn btn-primary btn-block">Create Room</button>
+            <button id="btnJoinRoom" class="btn btn-secondary btn-block">Join Room</button>
           </div>
-
           <div class="grid2 gap-top">
-            <div class="pill"><span class="muted tiny">Room</span><br><strong id="room">—</strong></div>
-            <div class="pill"><span class="muted tiny">Turn</span><br><strong id="turn">—</strong></div>
+            <div class="pill"><span class="muted tiny">Room</span><br><strong id="roomLabel">—</strong></div>
+            <div class="pill"><span class="muted tiny">You are</span><br><strong id="roleLabel">—</strong></div>
           </div>
+          <p class="muted tiny gap-top" id="onlineStatus">Firebase: —</p>
+        </div>
 
-          <p class="muted tiny gap-top">
-            Tip: Use “Switch Turn” just to confirm both phones sync. Next we’ll sync the full gameplay.
-          </p>
+        <div class="card">
+          <h2 class="h2">Easy Mode (One Phone)</h2>
+          <p class="muted">Pass-and-play on a single phone.</p>
+          <button id="btnStartLocal" class="btn btn-ghost btn-block">Start Local</button>
         </div>
 
         <div class="card">
@@ -57,17 +52,26 @@
           <ol class="list">
             <li>Each player sets a secret city.</li>
             <li>Take turns asking yes/no questions.</li>
-            <li>Make a guess anytime on your turn.</li>
+            <li>Guess anytime on your turn.</li>
           </ol>
         </div>
       </section>
 
       <!-- SETUP -->
       <section id="screenSetup" class="screen hidden">
-        <h1 class="h1">Setup</h1>
+        <div class="banner">
+          <div class="banner-left">
+            <div class="muted tiny">Mode</div>
+            <div class="h2" id="modeLabel">—</div>
+          </div>
+          <div class="banner-right">
+            <div class="muted tiny">Room</div>
+            <div class="h2" id="roomLabel2">—</div>
+          </div>
+        </div>
 
         <div class="card">
-          <h2 class="h2">Player names</h2>
+          <h2 class="h2">Players</h2>
           <div class="grid2">
             <label class="field">
               <span>Player 1</span>
@@ -78,20 +82,20 @@
               <input id="p2Name" maxlength="18" placeholder="Player 2" />
             </label>
           </div>
+          <p class="muted tiny gap-top" id="setupHint">—</p>
         </div>
 
         <div class="card">
           <h2 class="h2">Secret cities</h2>
-          <p class="muted">Hand the phone to each player when it's their turn to enter.</p>
-
+          <p class="muted">Keep it hidden 👀</p>
           <div class="stack">
             <button id="btnSetP1" class="btn btn-secondary btn-block">Set Player 1 City</button>
             <button id="btnSetP2" class="btn btn-secondary btn-block">Set Player 2 City</button>
           </div>
 
           <div class="grid2 gap-top">
-            <div class="pill" id="pillP1">P1 city: <strong id="p1CityStatus">not set</strong></div>
-            <div class="pill" id="pillP2">P2 city: <strong id="p2CityStatus">not set</strong></div>
+            <div class="pill">P1 city: <strong id="p1CityStatus">not set</strong></div>
+            <div class="pill">P2 city: <strong id="p2CityStatus">not set</strong></div>
           </div>
 
           <button id="btnBeginGame" class="btn btn-primary btn-block gap-top" disabled>Begin Game</button>
@@ -101,20 +105,18 @@
 
       <!-- GAME -->
       <section id="screenGame" class="screen hidden">
-        <div class="card">
-          <div class="row">
-            <div>
-              <div class="muted tiny">Turn</div>
-              <div class="h2" id="turnLabel">—</div>
-            </div>
-            <div class="right">
-              <div class="muted tiny">Phase</div>
-              <div class="h2" id="phaseLabel">—</div>
-            </div>
+        <div class="banner">
+          <div class="banner-left">
+            <div class="muted tiny">Turn</div>
+            <div class="h2" id="turnLabel">—</div>
           </div>
+          <div class="banner-right">
+            <div class="muted tiny">Phase</div>
+            <div class="h2" id="phaseLabel">—</div>
+          </div>
+        </div>
 
-          <div class="divider"></div>
-
+        <div class="card">
           <div id="askArea" class="stack">
             <h2 class="h2">Ask a yes/no question</h2>
             <label class="field">
@@ -149,7 +151,7 @@
               <button id="btnSubmitGuess" class="btn btn-primary btn-block">Submit</button>
               <button id="btnCancelGuess" class="btn btn-ghost btn-block">Cancel</button>
             </div>
-            <p class="muted tiny">Tip: spelling doesn't have to be perfect—close matches are accepted.</p>
+            <p class="muted tiny">Tip: spelling isn't strict—close matches are accepted.</p>
           </div>
 
           <div id="endArea" class="stack hidden">
@@ -165,7 +167,9 @@
         <div class="card">
           <div class="row">
             <h2 class="h2">Log</h2>
-            <button id="btnClearLog" class="btn btn-ghost tinybtn">Clear</button>
+            <div class="row-right">
+              <button id="btnClearLog" class="btn btn-ghost tinybtn">Clear</button>
+            </div>
           </div>
           <div id="log" class="log"></div>
         </div>
@@ -181,7 +185,7 @@
           <p class="muted tiny" id="modalHint">Make sure the other player isn't looking 👀</p>
           <label class="field">
             <span>City</span>
-            <input id="secretCityInput" maxlength="60" placeholder="e.g., Vienna" autocomplete="off" />
+            <input id="secretCityInput" maxlength="60" placeholder="e.g., Montevideo" autocomplete="off" />
           </label>
           <div class="grid2">
             <button id="btnSaveCity" class="btn btn-primary btn-block">Save</button>
@@ -209,13 +213,10 @@
     </footer>
   </div>
 
-  <!-- Firebase (browser/compat build for GitHub Pages) -->
+  <!-- Firebase (compat build for GitHub Pages) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
   <script src="firebase.js"></script>
-  <script src="multiplayer.js"></script>
-  <script src="app.js"></script>
-  <script src="online.js"></script>
 
   <script src="app.js"></script>
   <script>
