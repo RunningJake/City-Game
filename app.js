@@ -93,7 +93,6 @@
 
     endMessage: $("endMessage"),
     btnRematch: $("btnRematch"),
-    btnToSetup: $("btnToSetup"),
 
     btnClearLog: $("btnClearLog"),
     log: $("log"),
@@ -674,14 +673,10 @@
     if (activeMode === "online") return onlineSubmitGuess();
   });
 
-  els.btnRematch.addEventListener("click", async () => {
-    if (activeMode === "local") return localRematch();
-    if (activeMode === "online") return onlineRematch();
-  });
-
-  els.btnToSetup.addEventListener("click", async () => {
-    if (activeMode === "local") return localNewCities();
-    if (activeMode === "online") return onlineNewCities();
+ els.btnRematch.addEventListener("click", async () => {
+  // Play Again = require NEW secret cities
+  if (activeMode === "local") return localNewCities();
+  if (activeMode === "online") return onlineNewCities();
   });
 
   els.btnClearLog.addEventListener("click", async () => {
