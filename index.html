@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>City Guess Game</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0b0f14">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app" class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">★</span>
+        <span class="title">City Guess</span>
+      </div>
+      <button id="btnReset" class="btn btn-ghost" title="Reset game">Reset</button>
+    </header>
+
+    <main class="panel">
+      <!-- HOME -->
+      <section id="screenHome" class="screen">
+        <h1 class="h1">City Guess Game</h1>
+        <p class="muted">Pass-and-play, phone-friendly, pixel vibes.</p>
+
+        <div class="card">
+          <h2 class="h2">Easy Mode</h2>
+          <p class="muted">One phone, two players. Secret cities stay hidden.</p>
+          <button id="btnStart" class="btn btn-primary btn-block">Start</button>
+        </div>
+
+        <div class="card">
+          <h2 class="h2">How to play</h2>
+          <ol class="list">
+            <li>Each player sets a secret city.</li>
+            <li>Take turns asking yes/no questions.</li>
+            <li>Make a guess anytime on your turn.</li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- SETUP -->
+      <section id="screenSetup" class="screen hidden">
+        <h1 class="h1">Setup</h1>
+
+        <div class="card">
+          <h2 class="h2">Player names</h2>
+          <div class="grid2">
+            <label class="field">
+              <span>Player 1</span>
+              <input id="p1Name" maxlength="18" placeholder="Player 1" />
+            </label>
+            <label class="field">
+              <span>Player 2</span>
+              <input id="p2Name" maxlength="18" placeholder="Player 2" />
+            </label>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="h2">Secret cities</h2>
+          <p class="muted">Hand the phone to each player when it's their turn to enter.</p>
+
+          <div class="stack">
+            <button id="btnSetP1" class="btn btn-secondary btn-block">Set Player 1 City</button>
+            <button id="btnSetP2" class="btn btn-secondary btn-block">Set Player 2 City</button>
+          </div>
+
+          <div class="grid2 gap-top">
+            <div class="pill" id="pillP1">P1 city: <strong id="p1CityStatus">not set</strong></div>
+            <div class="pill" id="pillP2">P2 city: <strong id="p2CityStatus">not set</strong></div>
+          </div>
+
+          <button id="btnBeginGame" class="btn btn-primary btn-block gap-top" disabled>Begin Game</button>
+          <button id="btnBackHome" class="btn btn-ghost btn-block">Back</button>
+        </div>
+      </section>
+
+      <!-- GAME -->
+      <section id="screenGame" class="screen hidden">
+        <div class="card">
+          <div class="row">
+            <div>
+              <div class="muted tiny">Turn</div>
+              <div class="h2" id="turnLabel">—</div>
+            </div>
+            <div class="right">
+              <div class="muted tiny">Phase</div>
+              <div class="h2" id="phaseLabel">—</div>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div id="askArea" class="stack">
+            <h2 class="h2">Ask a yes/no question</h2>
+            <label class="field">
+              <span>Question</span>
+              <input id="questionInput" maxlength="80" placeholder="e.g., Is your city coastal?" />
+            </label>
+
+            <div class="grid2">
+              <button id="btnAsk" class="btn btn-primary btn-block">Ask</button>
+              <button id="btnQuick" class="btn btn-secondary btn-block">Quick Qs</button>
+            </div>
+
+            <button id="btnGuess" class="btn btn-ghost btn-block">Make a guess</button>
+          </div>
+
+          <div id="answerArea" class="stack hidden">
+            <h2 class="h2">Answer</h2>
+            <div class="bubble" id="questionDisplay">—</div>
+            <div class="grid2">
+              <button id="btnYes" class="btn btn-primary btn-block">Yes</button>
+              <button id="btnNo" class="btn btn-danger btn-block">No</button>
+            </div>
+          </div>
+
+          <div id="guessArea" class="stack hidden">
+            <h2 class="h2">Make a guess</h2>
+            <label class="field">
+              <span>Your guess</span>
+              <input id="guessInput" maxlength="60" placeholder="Type the city..." />
+            </label>
+            <div class="grid2">
+              <button id="btnSubmitGuess" class="btn btn-primary btn-block">Submit</button>
+              <button id="btnCancelGuess" class="btn btn-ghost btn-block">Cancel</button>
+            </div>
+            <p class="muted tiny">Tip: spelling doesn't have to be perfect—close matches are accepted.</p>
+          </div>
+
+          <div id="endArea" class="stack hidden">
+            <h2 class="h2">Game Over</h2>
+            <div class="bubble" id="endMessage">—</div>
+            <div class="grid2">
+              <button id="btnRematch" class="btn btn-primary btn-block">Rematch</button>
+              <button id="btnToSetup" class="btn btn-secondary btn-block">New cities</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="row">
+            <h2 class="h2">Log</h2>
+            <button id="btnClearLog" class="btn btn-ghost tinybtn">Clear</button>
+          </div>
+          <div id="log" class="log"></div>
+        </div>
+      </section>
+
+      <!-- MODAL: enter secret city -->
+      <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal-card">
+          <div class="row">
+            <div class="h2" id="modalTitle">Enter secret city</div>
+            <button id="btnCloseModal" class="btn btn-ghost tinybtn" aria-label="Close">✕</button>
+          </div>
+          <p class="muted tiny" id="modalHint">Make sure the other player isn't looking 👀</p>
+          <label class="field">
+            <span>City</span>
+            <input id="secretCityInput" maxlength="60" placeholder="e.g., Montevideo" autocomplete="off" />
+          </label>
+          <div class="grid2">
+            <button id="btnSaveCity" class="btn btn-primary btn-block">Save</button>
+            <button id="btnCancelCity" class="btn btn-ghost btn-block">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- MODAL: quick questions -->
+      <div id="quickModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="quickTitle">
+        <div class="modal-card">
+          <div class="row">
+            <div class="h2" id="quickTitle">Quick Questions</div>
+            <button id="btnCloseQuick" class="btn btn-ghost tinybtn" aria-label="Close">✕</button>
+          </div>
+          <p class="muted tiny">Tap to insert a question.</p>
+          <div id="quickList" class="quicklist"></div>
+        </div>
+      </div>
+
+    </main>
+
+    <footer class="footer">
+      <span class="muted tiny">Offline-ready • Add to Home Screen for a real “app” feel</span>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+    }
+  </script>
+</body>
+</html>
