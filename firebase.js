@@ -1,16 +1,15 @@
-// firebase.js — Firebase config + db handle (compat)
-(function(){
-  if (typeof firebase === "undefined") {
-    console.error("Firebase SDK not loaded. Check script tags in index.html.");
-    return;
-  }
-  // NOTE: Keep your existing firebaseConfig in your repo.
-  // If you already have firebase.initializeApp(firebaseConfig) here, you can keep it as-is.
-  const firebaseConfig = window.firebaseConfig || {};
-  try{
-    if (!firebase.apps || !firebase.apps.length) firebase.initializeApp(firebaseConfig);
-    window.db = firebase.database();
-  }catch(e){
-    console.error("Firebase init error", e);
-  }
-})();
+// firebase.js
+// Firebase config for City Guess (Realtime Database)
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCXjYrXjXo5zHBTtfwvfbZHH-TksGEzYlc",
+  authDomain: "city-game-d5837.firebaseapp.com",
+  databaseURL: "https://city-game-d5837-default-rtdb.firebaseio.com",
+  projectId: "city-game-d5837",
+  storageBucket: "city-game-d5837.firebasestorage.app",
+  messagingSenderId: "951479993023",
+  appId: "1:951479993023:web:a32cb80c124882c3ffbc0a"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();

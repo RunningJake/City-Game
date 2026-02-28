@@ -1,22 +1,31 @@
-// app.js — City Guess
-// Online: uses the original working Firebase RTDB pattern (players/P1/city etc.)
-// CPU:    structured dropdown questions, elimination-based guessing
-// Local:  pass-and-play
+// app.js — rebuilt from scratch (Local + Online)
+// Online uses Firebase RTDB (db from firebase.js). No bundlers, works on GitHub Pages.
 
 (() => {
   const $ = (id) => document.getElementById(id);
 
-  const screens = { home: $("screenHome"), setup: $("screenSetup"), game: $("screenGame") };
+  // Screens
+  const screens = {
+    home: $("screenHome"),
+    setup: $("screenSetup"),
+    game: $("screenGame"),
+  };
   function showScreen(which) {
-    Object.entries(screens).forEach(([k, el]) => el && el.classList.toggle("hidden", k !== which));
+    Object.entries(screens).forEach(([k, el]) => {
+      if (!el) return;
+      el.classList.toggle("hidden", k !== which);
+    });
   }
+
+  // Modal helpers
   function showModal(id, show) {
-    const el = $(id); if (!el) return;
+    const el = $(id);
+    if (!el) return;
     el.classList.toggle("hidden", !show);
   }
 
-  // ── Questions (expanded) ───────────────────────────────────────────
-  const QUESTIONS = [
+  // Quick questions
+  const QUICK = [
     "Is your city in Europe?",
     "Is your city in Asia?",
     "Is your city in Africa?",
@@ -26,117 +35,83 @@
     "Is your city in the Northern Hemisphere?",
     "Is your city in the Southern Hemisphere?",
     "Is your city coastal?",
-    "Is your city landlocked?",
-    "Is your city on an island?",
-    "Is your city on a major river?",
     "Is your city a national capital?",
-    "Is your city in the EU?",
-    "Is your city in the U.S.?",
-    "Is your city in a G7 country?",
     "Is your city in a country with over 100M people?",
     "Does your city have a metro population over 2M?",
-    "Does your city have a metro population over 10M?",
+    "Is your city on an island?",
+    "Is your city in the EU?",
+    "Is your city in the U.S.?",
     "Do most people speak Spanish in your city?",
     "Do most people speak English in your city?",
-    "Do most people speak French in your city?",
-    "Do most people speak Arabic in your city?",
-    "Do most people speak Portuguese in your city?",
-    "Do most people speak Mandarin in your city?",
-    "Does your city have a tropical climate?",
-    "Does your city get snow in winter?",
-    "Is your city in a desert region?",
-    "Is your city a major financial hub?",
-    "Is your city famous for tourism?",
-    "Is your city in a country with a monarchy?",
-    "Was your city founded before 1500 AD?",
-    "Is your city in a predominantly Muslim country?",
-    "Is your city in a predominantly Christian country?",
-    "Is your city in a predominantly Buddhist country?",
   ];
 
-  // ── City DB (40 cities) ────────────────────────────────────────────
-  const CITY_DB = [
-    { city:"Montevideo",   country:"Uruguay",      continent:"South America", hemisphere:"S", coastal:true,  landlocked:false, island:false, river:false, capital:true,  eu:false, us:false, g7:false, pop100m:false, metro2m:false, metro10m:false, lang:"Spanish",    tropical:false, snow:false, desert:false, financialHub:false, tourism:false, monarchy:false, founded1500:true,  muslim:false, christian:true,  buddhist:false },
-    { city:"Lisbon",       country:"Portugal",     continent:"Europe",        hemisphere:"N", coastal:true,  landlocked:false, island:false, river:true,  capital:true,  eu:true,  us:false, g7:false, pop100m:false, metro2m:true,  metro10m:false, lang:"Portuguese", tropical:false, snow:false, desert:false, financialHub:false, tourism:true,  monarchy:false, founded1500:true,  muslim:false, christian:true,  buddhist:false },
-    { city:"Tokyo",        country:"Japan",        continent:"Asia",          hemisphere:"N", coastal:true,  landlocked:false, island:true,  river:false, capital:true,  eu:false, us:false, g7:true,  pop100m:false, metro2m:true,  metro10m:true,  lang:"Japanese",   tropical:false, snow:true,  desert:false, financialHub:true,  tourism:true,  monarchy:true,  founded1500:true,  muslim:false, christian:false, buddhist:true  },
-    { city:"Jakarta",      country:"Indonesia",    continent:"Asia",          hemisphere:"S", coastal:true,  landlocked:false, island:true,  river:true,  capital:true,  eu:false, us:false, g7:false, pop100m:true,  metro2m:true,  metro10m:true,  lang:"Indonesian", tropical:true,  snow:false, desert:false, financialHub:false, tourism:false, monarchy:false, founded1500:true,  muslim:true,  christian:false, buddhist:false },
-    { city:"Nairobi",      country:"Kenya",        continent:"Africa",        hemisphere:"S", coastal:false, landlocked:true,  island:false, river:false, capital:true,  eu:false, us:false, g7:false, pop100m:false, metro2m:true,  metro10m:false, lang:"English",    tropical:true,  snow:false, desert:false, financialHub:false, tourism:true,  monarchy:false, founded1500:false, muslim:false, christian:true,  buddhist:false },
-    { city:"Toronto",      country:"Canada",       continent:"North America", hemisphere:"N", coastal:false, landlocked:false, island:false, river:false, capital:false, eu:false, us:false, g7:true,  pop100m:false, metro2m:true,  metro10m:false, lang:"English",    tropical:false, snow:true,  desert:false, financialHub:true,  tourism:true,  monarchy:true,  founded1500:false, muslim:false, christian:true,  buddhist:false },
-    { city:"Sydney",       country:"Australia",    continent:"Oceania",       hemisphere:"S", coastal:true,  landlocked:false, island:true,  river:false, capital:false, eu:false, us:false, g7:false, pop100m:false, metro2m:true,  metro10m:false, lang:"English",    tropical:false, snow:false, desert:false, financialHub:true,  tourism:true,  monarchy:true,  founded1500:false, muslim:false, christian:true,  buddhist:false },
-    { city:"Madrid",       country:"Spain",        continent:"Europe",        hemisphere:"N", coastal:false, landlocked:true,  island:false, river:false, capital:true,  eu:true,  us:false, g7:false, pop100m:false, metro2m:true,  metro10m:false, lang:"Spanish",    tropical:false, snow:true,  desert:false, financialHub:true,  tourism:true,  monarchy:true,  founded1500:true,  muslim:false, christian:true,  buddhist:false },
-    { city:"Miami",        country:"USA",          continent:"North America", hemisphere:"N", coastal:true,  landlocked:false, island:false, river:false, capital:false, eu:false, us:true,  g7:true,  pop100m:true,  metro2m:true,  metro10m:false, lang:"English",    tropical:true,  snow:false, desert:false, financialHub:false, tourism:true,  monarchy:false, founded1500:false, muslim:false, christian:true,  buddhist:false },
-    { city:"Reykjavik",    country:"Iceland",      continent:"Europe",        hemisphere:"N", coastal:true,  landlocked:false, island:true,  river:false, capital:true,  eu:false, us:false, g7:false, pop100m:false, metro2m:false, metro10m:false, lang:"Icelandic",  tropical:false, snow:true,  desert:false, financialHub:false, tourism:true,  monarchy:false, founded1500:true,  muslim:false, christian:true,  buddhist:false },
-    { city:"Buenos Aires", country:"Argentina",    continent:"South America", hemisphere:"S", coastal:true,  landlocked:false, island:false, river:true,  capital:true,  eu:false, us:false, g7:false, pop100m:false, metro2m:true,  metro10m:true,  lang:"Spanish",    tropical:false, snow:false, desert:false, financialHub:true,  tourism:true,  monarchy:false, founded1500:true,  muslim:false, christian:true,  buddhist:false },
-    { city:"Cairo",        country:"Egypt",        continent:"Africa",        hemisphere:"N", coastal:false, landlocked:true,  island:false, river:true,  capital:true,  eu:false, us:false, g7:false, pop100m:true,  metro2m:true,  metro10m:true,  lang:"Arabic",     tropical:false, snow:false, desert:true,  financialHub:false, tourism:true,  monarchy:false, founded1500:true,  muslim:true,  christian:false, buddhist:false },
-    { city:"Lagos",        country:"Nigeria",      continent:"Africa",        hemisphere:"N", coastal:true,  landlocked:false, island:false, river:false, capital:false, eu:false, us:false, g7:false, pop100m:true,  metro2m:true,  metro10m:true,  lang:"English",    tropical:true,  snow:false, desert:false, financialHub:false, tourism:false, monarchy:false, founded1500:true,  muslim:false, christian:true,  buddhist:false },
-    { city:"Bangkok",      country:"Thailand",     continent:"Asia",          hemisphere:"N", coastal:false, landlocked:true,  island:false, river:true,  capital:true,  eu:false, us:false, g7:false, pop100m:false, metro2m:true,  metro10m:true,  lang:"Thai",       tropical:true,  snow:false, desert:false, financialHub:false, tourism:true,  monarchy:true,  founded1500:false, muslim:false, christian:false, buddhist:true  },
-    { city:"Istanbul",     country:"Turkey",       continent:"Europe",        hemisphere:"N", coastal:true,  landlocked:false, island:false, river:false, capital:false, eu:false, us:false, g7:false, pop100m:false, metro2m:true,  metro10m:true,  lang:"Turkish",    tropical:false, snow:true,  desert:false, financialHub:true,  tourism:true,  monarchy:false, founded1500:true,  muslim:true,  christian:false, buddhist:false },
-    { city:"Paris",        country:"France",       continent:"Europe",        hemisphere:"N", coastal:false, landlocked:true,  island:false, river:true,  capital:true,  eu:true,  us:false, g7:true,  pop100m:false, metro2m:true,  metro10m:true,  lang:"French",     tropical:false, snow:true,  desert:false, financialHub:true,  tourism:true,  monarchy:false, founded1500:true,  muslim:false, christian:true,  buddhist:false },
-    { city:"London",       country:"UK",           continent:"Europe",        hemisphere:"N", coastal:false, landlocked:true,  island:true,  river:true,  capital:true,  eu:false, us:false, g7:true,  pop100m:false, metro2m:true,  metro10m:true,  lang:"English",    tropical:false, snow:true,  desert:false, financialHub:true,  tourism:true,  monarchy:true,  founded1500:true,  muslim:false, christian:true,  buddhist:false },
-    { city:"New York",     country:"USA",          continent:"North America", hemisphere:"N", coastal:true,  landlocked:false, island:false, river:false, capital:false, eu:false, us:true,  g7:true,  pop100m:true,  metro2m:true,  metro10m:true,  lang:"English",    tropical:false, snow:true,  desert:false, financialHub:true,  tourism:true,  monarchy:false, founded1500:false, muslim:false, christian:true,  buddhist:false },
-    { city:"Mumbai",       country:"India",        continent:"Asia",          hemisphere:"N", coastal:true,  landlocked:false, island:false, river:false, capital:false, eu:false, us:false, g7:false, pop100m:true,  metro2m:true,  metro10m:true,  lang:"Hindi",      tropical:true,  snow:false, desert:false, financialHub:true,  tourism:true,  monarchy:false, founded1500:true,  muslim:false, christian:false, buddhist:false },
-    { city:"Beijing",      country:"China",        continent:"Asia",          hemisphere:"N", coastal:false, landlocked:true,  island:false, river:false, capital:true,  eu:false, us:false, g7:false, pop100m:true,  metro2m:true,  metro10m:true,  lang:"Mandarin",   tropical:false, snow:true,  desert:false, financialHub:true,  tourism:true,  monarchy:false, founded1500:true,  muslim:false, christian:false, buddhist:false },
-    { city:"Seoul",        country:"South Korea",  continent:"Asia",          hemisphere:"N", coastal:false, landlocked:true,  island:false, river:true,  capital:true,  eu:false, us:false, g7:false, pop100m:false, metro2m:true,  metro10m:true,  lang:"Korean",     tropical:false, snow:true,  desert:false, financialHub:true,  tourism:true,  monarchy:false, founded1500:true,  muslim:false, christian:true,  buddhist:false },
-    { city:"Mexico City",  country:"Mexico",       continent:"North America", hemisphere:"N", coastal:false, landlocked:true,  island:false, river:false, capital:true,  eu:false, us:false, g7:false, pop100m:true,  metro2m:true,  metro10m:true,  lang:"Spanish",    tropical:false, snow:false, desert:false, financialHub:true,  tourism:true,  monarchy:false, founded1500:true,  muslim:false, christian:true,  buddhist:false },
-    { city:"São Paulo",    country:"Brazil",       continent:"South America", hemisphere:"S", coastal:false, landlocked:true,  island:false, river:false, capital:false, eu:false, us:false, g7:false, pop100m:true,  metro2m:true,  metro10m:true,  lang:"Portuguese", tropical:true,  snow:false, desert:false, financialHub:true,  tourism:true,  monarchy:false, founded1500:true,  muslim:false, christian:true,  buddhist:false },
-    { city:"Casablanca",   country:"Morocco",      continent:"Africa",        hemisphere:"N", coastal:true,  landlocked:false, island:false, river:false, capital:false, eu:false, us:false, g7:false, pop100m:false, metro2m:true,  metro10m:false, lang:"Arabic",     tropical:false, snow:false, desert:false, financialHub:false, tourism:true,  monarchy:true,  founded1500:true,  muslim:true,  christian:false, buddhist:false },
-    { city:"Karachi",      country:"Pakistan",     continent:"Asia",          hemisphere:"N", coastal:true,  landlocked:false, island:false, river:false, capital:false, eu:false, us:false, g7:false, pop100m:true,  metro2m:true,  metro10m:true,  lang:"Urdu",       tropical:false, snow:false, desert:true,  financialHub:false, tourism:false, monarchy:false, founded1500:false, muslim:true,  christian:false, buddhist:false },
-    { city:"Dhaka",        country:"Bangladesh",   continent:"Asia",          hemisphere:"N", coastal:false, landlocked:true,  island:false, river:true,  capital:true,  eu:false, us:false, g7:false, pop100m:true,  metro2m:true,  metro10m:true,  lang:"Bengali",    tropical:true,  snow:false, desert:false, financialHub:false, tourism:false, monarchy:false, founded1500:true,  muslim:true,  christian:false, buddhist:false },
-    { city:"Lima",         country:"Peru",         continent:"South America", hemisphere:"S", coastal:true,  landlocked:false, island:false, river:false, capital:true,  eu:false, us:false, g7:false, pop100m:false, metro2m:true,  metro10m:false, lang:"Spanish",    tropical:false, snow:false, desert:true,  financialHub:false, tourism:true,  monarchy:false, founded1500:true,  muslim:false, christian:true,  buddhist:false },
-    { city:"Bogotá",       country:"Colombia",     continent:"South America", hemisphere:"N", coastal:false, landlocked:true,  island:false, river:false, capital:true,  eu:false, us:false, g7:false, pop100m:false, metro2m:true,  metro10m:false, lang:"Spanish",    tropical:false, snow:false, desert:false, financialHub:false, tourism:false, monarchy:false, founded1500:true,  muslim:false, christian:true,  buddhist:false },
-    { city:"Johannesburg", country:"South Africa", continent:"Africa",        hemisphere:"S", coastal:false, landlocked:true,  island:false, river:false, capital:false, eu:false, us:false, g7:false, pop100m:false, metro2m:true,  metro10m:false, lang:"English",    tropical:false, snow:false, desert:false, financialHub:true,  tourism:true,  monarchy:false, founded1500:false, muslim:false, christian:true,  buddhist:false },
-    { city:"Amsterdam",    country:"Netherlands",  continent:"Europe",        hemisphere:"N", coastal:false, landlocked:true,  island:false, river:true,  capital:true,  eu:true,  us:false, g7:false, pop100m:false, metro2m:true,  metro10m:false, lang:"Dutch",      tropical:false, snow:true,  desert:false, financialHub:true,  tourism:true,  monarchy:true,  founded1500:true,  muslim:false, christian:true,  buddhist:false },
-    { city:"Vienna",       country:"Austria",      continent:"Europe",        hemisphere:"N", coastal:false, landlocked:true,  island:false, river:true,  capital:true,  eu:true,  us:false, g7:false, pop100m:false, metro2m:true,  metro10m:false, lang:"German",     tropical:false, snow:true,  desert:false, financialHub:true,  tourism:true,  monarchy:false, founded1500:true,  muslim:false, christian:true,  buddhist:false },
-    { city:"Singapore",    country:"Singapore",    continent:"Asia",          hemisphere:"N", coastal:true,  landlocked:false, island:true,  river:false, capital:true,  eu:false, us:false, g7:false, pop100m:false, metro2m:true,  metro10m:false, lang:"English",    tropical:true,  snow:false, desert:false, financialHub:true,  tourism:true,  monarchy:false, founded1500:false, muslim:false, christian:false, buddhist:false },
-    { city:"Dubai",        country:"UAE",          continent:"Asia",          hemisphere:"N", coastal:true,  landlocked:false, island:false, river:false, capital:false, eu:false, us:false, g7:false, pop100m:false, metro2m:true,  metro10m:false, lang:"Arabic",     tropical:false, snow:false, desert:true,  financialHub:true,  tourism:true,  monarchy:true,  founded1500:false, muslim:true,  christian:false, buddhist:false },
-    { city:"Havana",       country:"Cuba",         continent:"North America", hemisphere:"N", coastal:true,  landlocked:false, island:true,  river:false, capital:true,  eu:false, us:false, g7:false, pop100m:false, metro2m:true,  metro10m:false, lang:"Spanish",    tropical:true,  snow:false, desert:false, financialHub:false, tourism:true,  monarchy:false, founded1500:true,  muslim:false, christian:true,  buddhist:false },
-    { city:"Accra",        country:"Ghana",        continent:"Africa",        hemisphere:"N", coastal:true,  landlocked:false, island:false, river:false, capital:true,  eu:false, us:false, g7:false, pop100m:false, metro2m:true,  metro10m:false, lang:"English",    tropical:true,  snow:false, desert:false, financialHub:false, tourism:false, monarchy:false, founded1500:false, muslim:false, christian:true,  buddhist:false },
-    { city:"Oslo",         country:"Norway",       continent:"Europe",        hemisphere:"N", coastal:true,  landlocked:false, island:false, river:false, capital:true,  eu:false, us:false, g7:false, pop100m:false, metro2m:false, metro10m:false, lang:"Norwegian",  tropical:false, snow:true,  desert:false, financialHub:true,  tourism:true,  monarchy:true,  founded1500:true,  muslim:false, christian:true,  buddhist:false },
-    { city:"Addis Ababa",  country:"Ethiopia",     continent:"Africa",        hemisphere:"N", coastal:false, landlocked:true,  island:false, river:false, capital:true,  eu:false, us:false, g7:false, pop100m:true,  metro2m:true,  metro10m:false, lang:"Amharic",    tropical:false, snow:false, desert:false, financialHub:false, tourism:false, monarchy:false, founded1500:false, muslim:false, christian:true,  buddhist:false },
-    { city:"Tehran",       country:"Iran",         continent:"Asia",          hemisphere:"N", coastal:false, landlocked:true,  island:false, river:false, capital:true,  eu:false, us:false, g7:false, pop100m:true,  metro2m:true,  metro10m:true,  lang:"Persian",    tropical:false, snow:true,  desert:true,  financialHub:false, tourism:false, monarchy:false, founded1500:true,  muslim:true,  christian:false, buddhist:false },
-    { city:"Kyiv",         country:"Ukraine",      continent:"Europe",        hemisphere:"N", coastal:false, landlocked:true,  island:false, river:true,  capital:true,  eu:false, us:false, g7:false, pop100m:false, metro2m:true,  metro10m:false, lang:"Ukrainian",  tropical:false, snow:true,  desert:false, financialHub:false, tourism:false, monarchy:false, founded1500:true,  muslim:false, christian:true,  buddhist:false },
-    { city:"Kabul",        country:"Afghanistan",  continent:"Asia",          hemisphere:"N", coastal:false, landlocked:true,  island:false, river:false, capital:true,  eu:false, us:false, g7:false, pop100m:false, metro2m:true,  metro10m:false, lang:"Dari",       tropical:false, snow:true,  desert:true,  financialHub:false, tourism:false, monarchy:false, founded1500:true,  muslim:true,  christian:false, buddhist:false },
-    { city:"Chicago",      country:"USA",          continent:"North America", hemisphere:"N", coastal:false, landlocked:true,  island:false, river:false, capital:false, eu:false, us:true,  g7:true,  pop100m:true,  metro2m:true,  metro10m:false, lang:"English",    tropical:false, snow:true,  desert:false, financialHub:true,  tourism:true,  monarchy:false, founded1500:false, muslim:false, christian:true,  buddhist:false },
-  ];
-
-  // ── DOM elements ───────────────────────────────────────────────────
+  // ---------------------------
+  // Shared UI elements
+  // ---------------------------
   const els = {
-    btnReset:$("btnReset"), btnBackHome:$("btnBackHome"),
-    btnStartLocal:$("btnStartLocal"), btnCreateRoom:$("btnCreateRoom"),
-    btnJoinRoom:$("btnJoinRoom"), btnStartCpu:$("btnStartCpu"),
-    cpuDifficulty:$("cpuDifficulty"),
-    modeLabel:$("modeLabel"), setupHint:$("setupHint"),
-    roomLabel:$("roomLabel"), roleLabel:$("roleLabel"),
-    roomLabel2:$("roomLabel2"), onlineStatus:$("onlineStatus"),
-    p1Name:$("p1Name"), p2Name:$("p2Name"),
-    btnSetP1:$("btnSetP1"), btnSetP2:$("btnSetP2"),
-    p1CityStatus:$("p1CityStatus"), p2CityStatus:$("p2CityStatus"),
-    btnBeginGame:$("btnBeginGame"),
-    turnLabel:$("turnLabel"), phaseLabel:$("phaseLabel"),
-    askArea:$("askArea"), answerArea:$("answerArea"),
-    guessArea:$("guessArea"), endArea:$("endArea"),
-    freeQuestionBlock:$("freeQuestionBlock"),
-    questionInput:$("questionInput"),
-    btnAsk:$("btnAsk"), btnQuick:$("btnQuick"), btnGuess:$("btnGuess"),
-    cpuQuestionBlock:$("cpuQuestionBlock"),
-    cpuQuestionSelect:$("cpuQuestionSelect"),
-    btnCpuAsk:$("btnCpuAsk"), btnQuickCpu:$("btnQuickCpu"), btnGuessCpu:$("btnGuessCpu"),
-    questionDisplay:$("questionDisplay"),
-    btnYes:$("btnYes"), btnNo:$("btnNo"),
-    guessInput:$("guessInput"),
-    btnSubmitGuess:$("btnSubmitGuess"), btnCancelGuess:$("btnCancelGuess"),
-    endMessage:$("endMessage"), btnPlayAgain:$("btnPlayAgain"),
-    btnClearLog:$("btnClearLog"), log:$("log"),
-    modal:$("modal"), quickModal:$("quickModal"),
-    secretCityInput:$("secretCityInput"),
-    cpuCityPicker:$("cpuCityPicker"), cpuCitySelect:$("cpuCitySelect"),
-    btnSaveCity:$("btnSaveCity"), btnCancelCity:$("btnCancelCity"),
-    btnCloseModal:$("btnCloseModal"),
-    modalTitle:$("modalTitle"), modalHint:$("modalHint"),
-    quickList:$("quickList"), btnCloseQuick:$("btnCloseQuick"),
+    btnReset: $("btnReset"),
+    btnBackHome: $("btnBackHome"),
+    btnStartLocal: $("btnStartLocal"),
+    btnCreateRoom: $("btnCreateRoom"),
+    btnJoinRoom: $("btnJoinRoom"),
+
+    modeLabel: $("modeLabel"),
+    setupHint: $("setupHint"),
+    roomLabel: $("roomLabel"),
+    roleLabel: $("roleLabel"),
+    roomLabel2: $("roomLabel2"),
+    onlineStatus: $("onlineStatus"),
+
+    p1Name: $("p1Name"),
+    p2Name: $("p2Name"),
+    btnSetP1: $("btnSetP1"),
+    btnSetP2: $("btnSetP2"),
+    p1CityStatus: $("p1CityStatus"),
+    p2CityStatus: $("p2CityStatus"),
+    btnBeginGame: $("btnBeginGame"),
+
+    turnLabel: $("turnLabel"),
+    phaseLabel: $("phaseLabel"),
+
+    askArea: $("askArea"),
+    answerArea: $("answerArea"),
+    guessArea: $("guessArea"),
+    endArea: $("endArea"),
+
+    questionInput: $("questionInput"),
+    btnAsk: $("btnAsk"),
+    btnQuick: $("btnQuick"),
+    btnGuess: $("btnGuess"),
+
+    questionDisplay: $("questionDisplay"),
+    btnYes: $("btnYes"),
+    btnNo: $("btnNo"),
+
+    guessInput: $("guessInput"),
+    btnSubmitGuess: $("btnSubmitGuess"),
+    btnCancelGuess: $("btnCancelGuess"),
+
+    endMessage: $("endMessage"),
+    btnRematch: $("btnRematch"),
+    btnToSetup: $("btnToSetup"),
+
+    btnClearLog: $("btnClearLog"),
+    log: $("log"),
+
+    // modals
+    modal: $("modal"),
+    quickModal: $("quickModal"),
+    secretCityInput: $("secretCityInput"),
+    btnSaveCity: $("btnSaveCity"),
+    btnCancelCity: $("btnCancelCity"),
+    btnCloseModal: $("btnCloseModal"),
+    modalTitle: $("modalTitle"),
+    modalHint: $("modalHint"),
+
+    quickList: $("quickList"),
+    btnCloseQuick: $("btnCloseQuick"),
   };
 
-  // ── Helpers ────────────────────────────────────────────────────────
   function logLine(text) {
     if (!els.log) return;
     const div = document.createElement("div");
@@ -145,81 +120,153 @@
     els.log.prepend(div);
   }
   function clearLogUI() { if (els.log) els.log.innerHTML = ""; }
+
   function normalizeCity(s) {
-    return (s || "").toLowerCase().trim().replace(/[^\p{L}\p{N}\s]/gu, "").replace(/\s+/g, " ");
+    return (s || "")
+      .toLowerCase()
+      .trim()
+      .replace(/[^\p{L}\p{N}\s]/gu, "")
+      .replace(/\s+/g, " ");
   }
 
-  // ── Build UI lists ─────────────────────────────────────────────────
-  function buildQuickList() {
-    els.quickList.innerHTML = "";
-    QUESTIONS.forEach((q) => {
-      const item = document.createElement("div");
-      item.className = "quickitem";
-      item.textContent = q;
-      item.addEventListener("click", () => {
-        if (activeMode === "cpu") els.cpuQuestionSelect.value = q;
-        else els.questionInput.value = q;
-        showModal("quickModal", false);
-      });
-      els.quickList.appendChild(item);
-    });
-  }
-
-  function buildCpuQuestionSelect() {
-    els.cpuQuestionSelect.innerHTML = "";
-    const opt0 = document.createElement("option");
-    opt0.value = ""; opt0.textContent = "Select a question…";
-    els.cpuQuestionSelect.appendChild(opt0);
-    QUESTIONS.forEach((q) => {
-      const opt = document.createElement("option");
-      opt.value = q; opt.textContent = q;
-      els.cpuQuestionSelect.appendChild(opt);
-    });
-  }
-
-  function buildCpuCitySelect() {
-    els.cpuCitySelect.innerHTML = "";
-    const opt0 = document.createElement("option");
-    opt0.value = ""; opt0.textContent = "Pick a city…";
-    els.cpuCitySelect.appendChild(opt0);
-    CITY_DB.slice().sort((a, b) => a.city.localeCompare(b.city)).forEach((c) => {
-      const opt = document.createElement("option");
-      opt.value = c.city; opt.textContent = `${c.city} (${c.country})`;
-      els.cpuCitySelect.appendChild(opt);
-    });
-  }
-
-  // ── State ──────────────────────────────────────────────────────────
-  let activeMode = null; // "local" | "online" | "cpu"
-  let localEditing = null;
-
+  // ---------------------------
+  // LOCAL MODE (pass-and-play)
+  // ---------------------------
   const local = {
     p1: { name: "Player 1", city: "" },
     p2: { name: "Player 2", city: "" },
-    turn: "P1", phase: "setup", currentQuestion: "", winner: null,
-  };
-
-  const cpu = {
-    difficulty: "medium",
-    playerCity: null,
-    cpuCity: null,
     turn: "P1",
-    phase: "setup",
+    phase: "setup", // setup | ask | answer | guess | end
     currentQuestion: "",
     winner: null,
-    candidates: [],
-    askedQs: [],
   };
 
-  // ── Online (original working Firebase pattern) ─────────────────────
-  // Mirrors the exact schema from the old working app.js:
-  //   /games/{gameId}/players/P1 = { owner, online, city, name, ... }
-  //   /games/{gameId}/players/P2 = { ... }
-  //   /games/{gameId}/phase, turn, currentQuestion, winner, log/...
+  let activeMode = null; // "local" | "online"
+  let localEditing = null; // "P1" | "P2"
+
+  function localSyncSetupUI() {
+    els.modeLabel.textContent = "Local";
+    els.roomLabel2.textContent = "—";
+    els.setupHint.textContent = "One phone pass-and-play. Hand the phone over when setting cities.";
+    els.p1Name.disabled = false;
+    els.p2Name.disabled = false;
+    els.btnSetP1.disabled = false;
+    els.btnSetP2.disabled = false;
+    els.btnBeginGame.disabled = !(!!local.p1.city && !!local.p2.city);
+
+    els.p1Name.value = local.p1.name || "Player 1";
+    els.p2Name.value = local.p2.name || "Player 2";
+    els.p1CityStatus.textContent = local.p1.city ? "set" : "not set";
+    els.p2CityStatus.textContent = local.p2.city ? "set" : "not set";
+  }
+
+  function localSyncGameUI() {
+    els.turnLabel.textContent = local.turn;
+    els.phaseLabel.textContent = local.phase;
+
+    const showAsk = local.phase === "ask";
+    const showAnswer = local.phase === "answer";
+    const showGuess = local.phase === "guess";
+    const showEnd = local.phase === "end";
+
+    els.askArea.classList.toggle("hidden", !showAsk);
+    els.answerArea.classList.toggle("hidden", !showAnswer);
+    els.guessArea.classList.toggle("hidden", !showGuess);
+    els.endArea.classList.toggle("hidden", !showEnd);
+
+    els.btnAsk.disabled = !showAsk;
+    els.btnQuick.disabled = !showAsk;
+    els.btnGuess.disabled = !showAsk;
+
+    els.btnYes.disabled = !showAnswer;
+    els.btnNo.disabled = !showAnswer;
+
+    els.questionDisplay.textContent = local.currentQuestion || "—";
+
+    if (showEnd && local.winner) {
+      const name = local.winner === "P1" ? local.p1.name : local.p2.name;
+      els.endMessage.textContent = `${name} wins!`;
+    }
+  }
+
+  function localBegin() {
+    local.turn = "P1";
+    local.phase = "ask";
+    local.currentQuestion = "";
+    local.winner = null;
+    clearLogUI();
+    logLine("Game started!");
+    showScreen("game");
+    localSyncGameUI();
+  }
+
+  function localAsk() {
+    const q = (els.questionInput.value || "").trim();
+    if (!q) return;
+    local.currentQuestion = q;
+    local.phase = "answer";
+    logLine(`${local.turn} asked: ${q}`);
+    els.questionInput.value = "";
+    localSyncGameUI();
+  }
+
+  function localAnswer(ans) {
+    const answerer = local.turn === "P1" ? "P2" : "P1";
+    logLine(`${answerer} answered: ${ans}`);
+    local.currentQuestion = "";
+    local.turn = answerer;
+    local.phase = "ask";
+    localSyncGameUI();
+  }
+
+  function localOpenGuess() { local.phase = "guess"; localSyncGameUI(); }
+  function localCancelGuess() { local.phase = "ask"; localSyncGameUI(); }
+
+  function localSubmitGuess() {
+    const guess = (els.guessInput.value || "").trim();
+    if (!guess) return;
+    const opponent = local.turn === "P1" ? "P2" : "P1";
+    const opponentCity = opponent === "P1" ? local.p1.city : local.p2.city;
+    const ok = normalizeCity(guess) === normalizeCity(opponentCity);
+
+    if (ok) {
+      local.phase = "end";
+      local.winner = local.turn;
+      logLine(`${local.turn} guessed "${guess}" — CORRECT!`);
+    } else {
+      logLine(`${local.turn} guessed "${guess}" — wrong.`);
+      local.turn = opponent;
+      local.phase = "ask";
+    }
+    els.guessInput.value = "";
+    localSyncGameUI();
+  }
+
+  function localRematch() {
+    local.turn = "P1";
+    local.phase = "ask";
+    local.currentQuestion = "";
+    local.winner = null;
+    clearLogUI();
+    logLine("Rematch!");
+    localSyncGameUI();
+  }
+
+  function localNewCities() {
+    local.p1.city = "";
+    local.p2.city = "";
+    local.phase = "setup";
+    showScreen("setup");
+    localSyncSetupUI();
+  }
+
+  // ---------------------------
+  // ONLINE MODE (two phones)
+  // ---------------------------
   const LS_KEY = "city_guess_online_identity_v2";
   const online = {
     gameId: null,
-    role: null,
+    role: null,     // "P1" | "P2"
     playerKey: null,
     liveRef: null,
     logRef: null,
@@ -236,7 +283,7 @@
     return pk;
   }
 
-  function onlineRef(path = "") {
+  function onlineRef(path="") {
     return db.ref("games/" + online.gameId + (path ? "/" + path : ""));
   }
 
@@ -245,7 +292,6 @@
     const snap = await playersRef.once("value");
     const players = snap.val() || {};
 
-    // Reconnect: already own a slot
     for (const r of ["P1", "P2"]) {
       if (players?.[r]?.owner === online.playerKey) {
         online.role = r;
@@ -253,34 +299,39 @@
         return r;
       }
     }
-    // Claim first empty slot
+
     for (const r of ["P1", "P2"]) {
       if (!players?.[r]?.owner) {
         await playersRef.child(r).update({
-          owner: online.playerKey, online: true,
-          joinedAt: Date.now(), lastSeen: Date.now(),
+          owner: online.playerKey,
+          online: true,
+          joinedAt: Date.now(),
+          lastSeen: Date.now()
         });
         online.role = r;
         return r;
       }
     }
+
     online.role = null;
     return null;
   }
 
   function syncOnlineSetupUI(hint) {
-    els.modeLabel.textContent   = "Online";
-    els.roomLabel2.textContent  = online.gameId || "—";
-    els.roomLabel.textContent   = online.gameId || "—";
-    els.roleLabel.textContent   = online.role   || "—";
+    els.modeLabel.textContent = "Online";
+    els.roomLabel2.textContent = online.gameId || "—";
+    els.roomLabel.textContent = online.gameId || "—";
+    els.roleLabel.textContent = online.role || "—";
     els.onlineStatus.textContent = "Firebase: connected";
-    els.setupHint.textContent   = hint || "Set your name & city. Player 1 starts the game.";
+
+    els.setupHint.textContent = hint || "Set your name & city. Player 1 starts the game.";
 
     const isP1 = online.role === "P1";
-    els.p1Name.disabled   = !isP1;
+    els.p1Name.disabled = !isP1;
     els.btnSetP1.disabled = !isP1;
-    els.p2Name.disabled   =  isP1;
-    els.btnSetP2.disabled =  isP1;
+    els.p2Name.disabled = isP1;
+    els.btnSetP2.disabled = isP1;
+
     els.btnBeginGame.disabled = !isP1;
   }
 
@@ -289,7 +340,7 @@
     if (online.logRef && online.logListener) online.logRef.off("child_added", online.logListener);
 
     online.liveRef = onlineRef();
-    online.logRef  = onlineRef("log");
+    online.logRef = onlineRef("log");
 
     online.liveRef.on("value", (snap) => {
       const g = snap.val();
@@ -297,8 +348,8 @@
 
       const p1Set = !!g.players?.P1?.city;
       const p2Set = !!g.players?.P2?.city;
-      els.p1CityStatus.textContent = p1Set ? "set ✓" : "not set";
-      els.p2CityStatus.textContent = p2Set ? "set ✓" : "not set";
+      els.p1CityStatus.textContent = p1Set ? "set" : "not set";
+      els.p2CityStatus.textContent = p2Set ? "set" : "not set";
 
       if (g.players?.P1?.name && els.p1Name.disabled) els.p1Name.value = g.players.P1.name;
       if (g.players?.P2?.name && els.p2Name.disabled) els.p2Name.value = g.players.P2.name;
@@ -309,41 +360,33 @@
 
       if (g.phase && g.phase !== "setup") showScreen("game");
 
-      const myTurn = g.turn === online.role;
-      const p1Name = els.p1Name.value || "Player 1";
-      const p2Name = els.p2Name.value || "Player 2";
-
-      els.turnLabel.textContent  = (g.turn === "P1" ? p1Name : p2Name) + "'s turn";
+      els.turnLabel.textContent = g.turn || "—";
       els.phaseLabel.textContent = g.phase || "—";
 
-      els.askArea.classList.toggle("hidden",    g.phase !== "ask");
+      const myTurn = g.turn === online.role;
+
+      els.askArea.classList.toggle("hidden", g.phase !== "ask");
       els.answerArea.classList.toggle("hidden", g.phase !== "answer");
-      els.guessArea.classList.toggle("hidden",  g.phase !== "guess");
-      els.endArea.classList.toggle("hidden",    g.phase !== "end");
+      els.guessArea.classList.toggle("hidden", g.phase !== "guess");
+      els.endArea.classList.toggle("hidden", g.phase !== "end");
 
-      // Free-text always shown in online (no CPU select)
-      els.freeQuestionBlock.classList.remove("hidden");
-      els.cpuQuestionBlock.classList.add("hidden");
-
-      els.btnAsk.disabled   = !(myTurn && g.phase === "ask");
+      els.btnAsk.disabled = !(myTurn && g.phase === "ask");
       els.btnQuick.disabled = !(myTurn && g.phase === "ask");
       els.btnGuess.disabled = !(myTurn && g.phase === "ask");
 
       els.btnYes.disabled = !(!myTurn && g.phase === "answer");
-      els.btnNo.disabled  = !(!myTurn && g.phase === "answer");
+      els.btnNo.disabled = !(!myTurn && g.phase === "answer");
 
       els.questionDisplay.textContent = g.currentQuestion || "—";
 
       if (g.phase === "end" && g.winner) {
-        const winnerName = g.players?.[g.winner]?.name || g.winner;
-        // Show opponent's city as the answer
-        const opponentRole = online.role === "P1" ? "P2" : "P1";
-        const secretCity = g.players?.[opponentRole]?.city || "?";
-        els.endMessage.textContent = `🎉 ${winnerName} wins! The city was: ${secretCity}`;
+        const nm = g.players?.[g.winner]?.name || g.winner;
+        els.endMessage.textContent = `${nm} wins!`;
       }
     }, (err) => {
       console.error(err);
-      els.onlineStatus.textContent = "Firebase: error — " + (err?.message || err);
+      els.onlineStatus.textContent = "Firebase: listener error";
+      alert("Listener error: " + (err?.message || err));
     });
 
     clearLogUI();
@@ -361,27 +404,30 @@
     online.gameId = gid;
 
     await db.ref("games/" + gid).set({
-      status: "setup", phase: "setup", turn: "P1",
-      createdAt: Date.now(), currentQuestion: "", winner: null,
+      status: "setup",
+      phase: "setup",
+      turn: "P1",
+      createdAt: Date.now(),
       players: {
         P1: { owner: online.playerKey, online: true, joinedAt: Date.now(), name: "Player 1", city: null },
-        P2: { owner: null, online: false, joinedAt: null, name: "Player 2", city: null },
-      },
+        P2: { owner: null, online: false, joinedAt: null, name: "Player 2", city: null }
+      }
     });
 
     await claimRole();
     attachOnlineListeners();
     showScreen("setup");
-    syncOnlineSetupUI("You are Player 1. Set your name & city, then share the room code: " + gid);
-    alert("Room Code: " + gid + "\n\nShare this with your opponent!");
+    syncOnlineSetupUI("You are Player 1. Set your name & city. Share the room code with Player 2.");
+    alert("Room Code: " + gid);
   }
 
   async function onlineJoinRoom() {
     if (typeof db === "undefined") { alert("Firebase not ready. Check firebase.js."); return; }
     online.playerKey = ensureIdentity();
-    const code = prompt("Enter Room Code:");
+
+    const code = prompt("Enter Room Code");
     if (!code) return;
-    const gid = code.trim().toUpperCase();
+    const gid = code.toUpperCase();
     online.gameId = gid;
 
     const snap = await db.ref("games/" + gid).once("value");
@@ -412,524 +458,238 @@
   async function onlineBeginGame() {
     const snap = await onlineRef().once("value");
     const g = snap.val();
-    if (!g?.players?.P1?.city || !g?.players?.P2?.city) {
-      alert("Both players must set a city first."); return;
-    }
-    await onlineRef().update({ status: "playing", phase: "ask", turn: "P1", currentQuestion: "", winner: null });
-    await onlineRef("log").push({ t: Date.now(), text: "Game started! 🎯" });
+    if (!g?.players?.P1?.city || !g?.players?.P2?.city) { alert("Both players must set a city first."); return; }
+    await onlineRef().update({ status: "playing", phase: "ask", turn: "P1", currentQuestion: "", winner: null, lastAnswer: null });
+    await onlineRef("log").push({ t: Date.now(), text: "Game started!" });
   }
 
   async function onlineAskQuestion() {
-    const q = (els.questionInput.value || "").trim(); if (!q) return;
+    const q = (els.questionInput.value || "").trim();
+    if (!q) return;
     await onlineRef().update({ currentQuestion: q, phase: "answer" });
-    const name = online.role === "P1" ? (els.p1Name.value||"P1") : (els.p2Name.value||"P2");
-    await onlineRef("log").push({ t: Date.now(), text: `${name} asked: ${q}` });
+    await onlineRef("log").push({ t: Date.now(), text: `${online.role} asked: ${q}` });
     els.questionInput.value = "";
   }
 
   async function onlineAnswer(ans) {
     const snap = await onlineRef().once("value");
-    const g = snap.val(); if (!g) return;
+    const g = snap.val();
+    if (!g) return;
     const nextTurn = g.turn === "P1" ? "P2" : "P1";
-    await onlineRef().update({ phase: "ask", turn: nextTurn, currentQuestion: "" });
-    const name = online.role === "P1" ? (els.p1Name.value||"P1") : (els.p2Name.value||"P2");
-    await onlineRef("log").push({ t: Date.now(), text: `${name} answered: ${ans}` });
+    await onlineRef().update({ lastAnswer: ans, phase: "ask", turn: nextTurn, currentQuestion: "" });
+    await onlineRef("log").push({ t: Date.now(), text: `${online.role} answered: ${ans}` });
   }
 
-  async function onlineOpenGuess()   { await onlineRef().update({ phase: "guess" }); }
-  async function onlineCancelGuess() { await onlineRef().update({ phase: "ask"   }); }
+  async function onlineOpenGuess() { await onlineRef().update({ phase: "guess" }); }
+  async function onlineCancelGuess() { await onlineRef().update({ phase: "ask" }); }
 
   async function onlineSubmitGuess() {
-    const guess = (els.guessInput.value || "").trim(); if (!guess) return;
+    const guess = (els.guessInput.value || "").trim();
+    if (!guess) return;
+
     const snap = await onlineRef().once("value");
-    const g = snap.val(); if (!g) return;
+    const g = snap.val();
+    if (!g) return;
+
     const opponent = online.role === "P1" ? "P2" : "P1";
     const opponentCity = g.players?.[opponent]?.city || "";
     const ok = normalizeCity(guess) === normalizeCity(opponentCity);
-    const name = online.role === "P1" ? (els.p1Name.value||"P1") : (els.p2Name.value||"P2");
+
     if (ok) {
       await onlineRef().update({ phase: "end", winner: online.role });
-      await onlineRef("log").push({ t: Date.now(), text: `${name} guessed "${guess}" — CORRECT! 🎉` });
+      await onlineRef("log").push({ t: Date.now(), text: `${online.role} guessed "${guess}" — CORRECT!` });
     } else {
       const nextTurn = g.turn === "P1" ? "P2" : "P1";
       await onlineRef().update({ phase: "ask", turn: nextTurn });
-      await onlineRef("log").push({ t: Date.now(), text: `${name} guessed "${guess}" — wrong.` });
+      await onlineRef("log").push({ t: Date.now(), text: `${online.role} guessed "${guess}" — wrong.` });
     }
     els.guessInput.value = "";
   }
 
-  // ── Setup UI sync ──────────────────────────────────────────────────
-  function syncSetupUI() {
-    if (activeMode === "cpu") {
-      els.modeLabel.textContent = "CPU";
-      els.setupHint.textContent = "Pick your name and choose your city from the list. CPU picks a secret city too.";
-      els.p2Name.value = "CPU"; els.p2Name.disabled = true;
-      els.btnSetP2.disabled = true;
-      els.p1Name.disabled = false; els.btnSetP1.disabled = false;
-      els.btnBeginGame.disabled = !(cpu.playerCity && cpu.cpuCity);
-      els.p1CityStatus.textContent = cpu.playerCity ? "set ✓" : "not set";
-      els.p2CityStatus.textContent = cpu.cpuCity    ? "set ✓" : "not set";
-      return;
-    }
-    if (activeMode === "local") {
-      els.modeLabel.textContent = "Local";
-      els.setupHint.textContent = "Pass-and-play. Hand the phone over when setting cities.";
-      els.p1Name.disabled = false; els.p2Name.disabled = false;
-      els.btnSetP1.disabled = false; els.btnSetP2.disabled = false;
-      els.btnBeginGame.disabled = !(local.p1.city && local.p2.city);
-      els.p1Name.value = local.p1.name; els.p2Name.value = local.p2.name;
-      els.p1CityStatus.textContent = local.p1.city ? "set ✓" : "not set";
-      els.p2CityStatus.textContent = local.p2.city ? "set ✓" : "not set";
-      return;
-    }
+  async function onlineRematch() {
+    await onlineRef().update({ phase: "ask", turn: "P1", currentQuestion: "", winner: null, lastAnswer: null, status: "playing" });
+    await onlineRef("log").push({ t: Date.now(), text: "Rematch!" });
   }
 
-  // ── Game UI sync (local + cpu) ─────────────────────────────────────
-  function syncGameUI() {
-    const turn  = activeMode === "cpu" ? cpu.turn  : local.turn;
-    const phase = activeMode === "cpu" ? cpu.phase : local.phase;
-    const p1Name = els.p1Name.value || "Player 1";
-    const p2Name = activeMode === "cpu" ? "CPU" : (els.p2Name.value || "Player 2");
-
-    els.turnLabel.textContent  = (turn === "P1" ? p1Name : p2Name) + "'s turn";
-    els.phaseLabel.textContent = phase;
-
-    els.askArea.classList.toggle("hidden",    phase !== "ask");
-    els.answerArea.classList.toggle("hidden", phase !== "answer");
-    els.guessArea.classList.toggle("hidden",  phase !== "guess");
-    els.endArea.classList.toggle("hidden",    phase !== "end");
-
-    els.freeQuestionBlock.classList.toggle("hidden", activeMode === "cpu");
-    els.cpuQuestionBlock.classList.toggle("hidden",  activeMode !== "cpu");
-
-    if (activeMode === "cpu") {
-      const humanTurn = cpu.turn === "P1";
-      els.btnCpuAsk.disabled   = !(humanTurn && phase === "ask");
-      els.btnQuickCpu.disabled = !(humanTurn && phase === "ask");
-      els.btnGuessCpu.disabled = !(humanTurn && phase === "ask");
-      els.btnYes.disabled = !(phase === "answer" && cpu.turn === "P2");
-      els.btnNo.disabled  = !(phase === "answer" && cpu.turn === "P2");
-    } else {
-      els.btnAsk.disabled   = !(phase === "ask");
-      els.btnQuick.disabled = !(phase === "ask");
-      els.btnGuess.disabled = !(phase === "ask");
-      els.btnYes.disabled   = !(phase === "answer");
-      els.btnNo.disabled    = !(phase === "answer");
-    }
-
-    els.questionDisplay.textContent =
-      (activeMode === "cpu" ? cpu.currentQuestion : local.currentQuestion) || "—";
-
-    if (phase === "end") {
-      const winner = activeMode === "cpu" ? cpu.winner : local.winner;
-      if (winner) {
-        const winnerName = winner === "P1" ? p1Name : p2Name;
-        const secretCity = activeMode === "cpu"
-          ? (winner === "P1" ? cpu.cpuCity?.city : cpu.playerCity?.city)
-          : (winner === "P1" ? local.p2.city : local.p1.city);
-        els.endMessage.textContent = `🎉 ${winnerName} wins! The city was: ${secretCity}`;
-      } else {
-        els.endMessage.textContent = "Game over!";
-      }
-    }
+  async function onlineNewCities() {
+    await onlineRef().update({ phase: "setup", status: "setup", currentQuestion: "", winner: null });
+    await onlineRef("players/P1/city").set(null);
+    await onlineRef("players/P2/city").set(null);
+    await onlineRef("log").push({ t: Date.now(), text: "New cities needed." });
+    showScreen("setup");
   }
 
-  // ── CPU answer engine ──────────────────────────────────────────────
-  function cityObjByName(name) {
-    return CITY_DB.find(c => normalizeCity(c.city) === normalizeCity(name)) || null;
+  async function onlineClearLog() { await onlineRef("log").set(null); clearLogUI(); }
+
+  // ---------------------------
+  // Shared modal logic
+  // ---------------------------
+  function openCityModal(forRole, hintText) {
+    els.modalTitle.textContent = forRole === "P1" ? "Player 1: secret city" : "Player 2: secret city";
+    els.modalHint.textContent = hintText || "Make sure the other player isn't looking 👀";
+    els.secretCityInput.value = "";
+    showModal("modal", true);
+    localEditing = forRole;
+    els.secretCityInput.focus();
   }
 
-  function cpuAnswerQ(q, cityObj) {
-    if (!cityObj) return null;
-    const t = cityObj, qq = q.toLowerCase();
-    if (qq.includes("in europe"))            return t.continent === "Europe";
-    if (qq.includes("in asia"))              return t.continent === "Asia";
-    if (qq.includes("in africa"))            return t.continent === "Africa";
-    if (qq.includes("in north america"))     return t.continent === "North America";
-    if (qq.includes("in south america"))     return t.continent === "South America";
-    if (qq.includes("in oceania"))           return t.continent === "Oceania";
-    if (qq.includes("northern hemisphere"))  return t.hemisphere === "N";
-    if (qq.includes("southern hemisphere"))  return t.hemisphere === "S";
-    if (qq.includes("coastal"))              return !!t.coastal;
-    if (qq.includes("landlocked"))           return !!t.landlocked;
-    if (qq.includes("on an island"))         return !!t.island;
-    if (qq.includes("on a major river"))     return !!t.river;
-    if (qq.includes("national capital"))     return !!t.capital;
-    if (qq.includes("in the eu"))            return !!t.eu;
-    if (qq.includes("in the u.s."))          return !!t.us;
-    if (qq.includes("g7"))                   return !!t.g7;
-    if (qq.includes("over 100m"))            return !!t.pop100m;
-    if (qq.includes("over 2m"))              return !!t.metro2m;
-    if (qq.includes("over 10m"))             return !!t.metro10m;
-    if (qq.includes("speak spanish"))        return t.lang.toLowerCase().includes("spanish");
-    if (qq.includes("speak english"))        return t.lang.toLowerCase().includes("english");
-    if (qq.includes("speak french"))         return t.lang.toLowerCase().includes("french");
-    if (qq.includes("speak arabic"))         return t.lang.toLowerCase().includes("arabic");
-    if (qq.includes("speak portuguese"))     return t.lang.toLowerCase().includes("portuguese");
-    if (qq.includes("speak mandarin"))       return t.lang.toLowerCase().includes("mandarin");
-    if (qq.includes("tropical"))             return !!t.tropical;
-    if (qq.includes("snow"))                 return !!t.snow;
-    if (qq.includes("desert"))               return !!t.desert;
-    if (qq.includes("financial hub"))        return !!t.financialHub;
-    if (qq.includes("tourism"))              return !!t.tourism;
-    if (qq.includes("monarchy"))             return !!t.monarchy;
-    if (qq.includes("founded before 1500"))  return !!t.founded1500;
-    if (qq.includes("muslim country"))       return !!t.muslim;
-    if (qq.includes("christian country"))    return !!t.christian;
-    if (qq.includes("buddhist country"))     return !!t.buddhist;
-    return null;
-  }
+  function closeCityModal() { showModal("modal", false); localEditing = null; }
 
-  function cpuEliminate(q, ans) {
-    cpu.candidates = cpu.candidates.filter(c => {
-      const expected = cpuAnswerQ(q, c);
-      if (expected === null) return true;
-      return expected === (ans === "Yes");
+  function buildQuickList() {
+    els.quickList.innerHTML = "";
+    QUICK.forEach((q) => {
+      const item = document.createElement("div");
+      item.className = "quickitem";
+      item.textContent = q;
+      item.addEventListener("click", () => {
+        els.questionInput.value = q;
+        showModal("quickModal", false);
+      });
+      els.quickList.appendChild(item);
     });
   }
 
-  function cpuPickQ() {
-    const unused = QUESTIONS.filter(q => !cpu.askedQs.includes(q));
-    const pool = unused.length ? unused : QUESTIONS;
-    if (cpu.difficulty === "easy") return pool[Math.floor(Math.random() * pool.length)];
-    if (cpu.difficulty === "medium") {
-      const pref = pool.filter(q => /europe|asia|africa|north america|south america|oceania|hemisphere/i.test(q));
-      const src = pref.length ? pref : pool;
-      return src[Math.floor(Math.random() * src.length)];
-    }
-    // Hard: pick question that splits candidates most evenly
-    let best = pool[0], bestScore = Infinity;
-    for (const q of pool) {
-      let yes = 0;
-      for (const c of cpu.candidates) if (cpuAnswerQ(q, c) === true) yes++;
-      const score = Math.abs(yes - (cpu.candidates.length - yes));
-      if (score < bestScore) { bestScore = score; best = q; }
-    }
-    return best;
-  }
-
-  // ── CPU game flow ──────────────────────────────────────────────────
-  function startCpuGame() {
-    cpu.turn = "P1"; cpu.phase = "ask";
-    cpu.currentQuestion = ""; cpu.winner = null;
-    cpu.candidates = CITY_DB.slice(); cpu.askedQs = [];
-    clearLogUI();
-    logLine("Game started — you go first! 🎯");
-    showScreen("game"); syncGameUI();
-  }
-
-  // Human asks → CPU answers → CPU immediately asks back
-  function cpuAsk() {
-    const q = els.cpuQuestionSelect.value;
-    if (!q) { logLine("Pick a question first."); return; }
-
-    logLine(`You asked: ${q}`);
-    const ans = cpuAnswerQ(q, cpu.cpuCity);
-    if (ans === null) { logLine("CPU: I can't answer that. Pick another."); return; }
-
-    logLine(`CPU answered: ${ans ? "Yes ✓" : "No ✗"}`);
-    els.cpuQuestionSelect.value = "";
-    cpu.currentQuestion = "";
-
-    // CPU's turn to ask back
-    cpu.turn = "P2";
-    cpu.phase = "ask";
-    syncGameUI(); // brief "CPU thinking" state
-
-    window.setTimeout(() => {
-      if (cpu.candidates.length === 1) { cpuGuessNow(); return; }
-      const cpuQ = cpuPickQ();
-      cpu.askedQs.push(cpuQ);
-      cpu.currentQuestion = cpuQ;
-      logLine(`CPU asks: ${cpuQ}`);
-      cpu.phase = "answer"; // human must answer; turn stays "P2"
-      syncGameUI();
-    }, 400);
-  }
-
-  // Human answers CPU's question
-  function cpuHumanAnswers(ans) {
-    const q = cpu.currentQuestion; if (!q) return;
-    logLine(`You answered: ${ans}`);
-    cpuEliminate(q, ans);
-    const n = cpu.candidates.length;
-    logLine(`CPU has ${n} city${n === 1 ? "" : "/cities"} left.`);
-    cpu.currentQuestion = "";
-    cpu.turn = "P1"; cpu.phase = "ask";
-    syncGameUI();
-  }
-
-  function cpuGuessNow() {
-    const guess = cpu.candidates[0].city;
-    logLine(`CPU guesses: "${guess}"!`);
-    const ok = normalizeCity(guess) === normalizeCity(cpu.playerCity?.city || "");
-    window.setTimeout(() => {
-      if (ok) {
-        cpu.phase = "end"; cpu.winner = "P2";
-        logLine(`CPU was right — it was ${guess}! CPU wins 🤖`);
-      } else {
-        logLine(`CPU guessed wrong (${guess}). Back to you!`);
-        cpu.candidates = CITY_DB.slice(); // reset
-        cpu.turn = "P1"; cpu.phase = "ask";
-      }
-      syncGameUI();
-    }, 400);
-  }
-
-  function cpuOpenGuess()   { cpu.phase = "guess"; syncGameUI(); }
-  function cpuCancelGuess() { cpu.phase = "ask";   syncGameUI(); }
-
-  function cpuSubmitGuess() {
-    const guess = (els.guessInput.value || "").trim(); if (!guess) return;
-    els.guessInput.value = "";
-    const ok = normalizeCity(guess) === normalizeCity(cpu.cpuCity?.city || "");
-    if (ok) {
-      cpu.phase = "end"; cpu.winner = "P1";
-      logLine(`You guessed "${guess}" — CORRECT! 🎉`);
-      syncGameUI();
-    } else {
-      logLine(`You guessed "${guess}" — wrong. CPU's turn!`);
-      cpu.turn = "P2"; cpu.phase = "ask";
-      window.setTimeout(() => {
-        if (cpu.candidates.length === 1) { cpuGuessNow(); return; }
-        const cpuQ = cpuPickQ();
-        cpu.askedQs.push(cpuQ);
-        cpu.currentQuestion = cpuQ;
-        logLine(`CPU asks: ${cpuQ}`);
-        cpu.phase = "answer";
-        syncGameUI();
-      }, 400);
-    }
-  }
-
-  // ── Local mode ─────────────────────────────────────────────────────
-  function localBegin() {
-    local.p1.name = (els.p1Name.value || "Player 1").trim().slice(0, 18);
-    local.p2.name = (els.p2Name.value || "Player 2").trim().slice(0, 18);
-    local.turn = "P1"; local.phase = "ask";
-    local.currentQuestion = ""; local.winner = null;
-    clearLogUI(); logLine("Game started!");
-    showScreen("game"); syncGameUI();
-  }
-
-  function localAsk() {
-    const q = (els.questionInput.value || "").trim(); if (!q) return;
-    local.currentQuestion = q; local.phase = "answer";
-    const name = local.turn === "P1" ? (els.p1Name.value||"P1") : (els.p2Name.value||"P2");
-    logLine(`${name} asked: ${q}`);
-    els.questionInput.value = "";
-    syncGameUI();
-  }
-
-  function localAnswer(ans) {
-    const answerer = local.turn === "P1" ? "P2" : "P1";
-    const aName = answerer === "P1" ? (els.p1Name.value||"P1") : (els.p2Name.value||"P2");
-    logLine(`${aName} answered: ${ans}`);
-    local.currentQuestion = "";
-    local.turn = answerer; local.phase = "ask";
-    syncGameUI();
-  }
-
-  function localOpenGuess()   { local.phase = "guess"; syncGameUI(); }
-  function localCancelGuess() { local.phase = "ask";   syncGameUI(); }
-
-  function localSubmitGuess() {
-    const guess = (els.guessInput.value || "").trim(); if (!guess) return;
-    const opponent = local.turn === "P1" ? "P2" : "P1";
-    const opponentCity = opponent === "P1" ? local.p1.city : local.p2.city;
-    const ok = normalizeCity(guess) === normalizeCity(opponentCity);
-    const gName = local.turn === "P1" ? (els.p1Name.value||"P1") : (els.p2Name.value||"P2");
-    if (ok) {
-      local.phase = "end"; local.winner = local.turn;
-      logLine(`${gName} guessed "${guess}" — CORRECT! 🎉`);
-    } else {
-      logLine(`${gName} guessed "${guess}" — wrong.`);
-      local.turn = opponent; local.phase = "ask";
-    }
-    els.guessInput.value = ""; syncGameUI();
-  }
-
-  // ── City modal ─────────────────────────────────────────────────────
-  function openCityModal(forRole, hintText) {
-    els.modalTitle.textContent = forRole === "P1" ? "Player 1: secret city" : "Player 2: secret city";
-    els.modalHint.textContent  = hintText || "Make sure the other player isn't looking 👀";
-    els.secretCityInput.value  = "";
-    if (activeMode === "cpu") {
-      els.cpuCityPicker.classList.remove("hidden");
-      els.secretCityInput.placeholder = "Use the picker below…";
-      els.secretCityInput.disabled = true;
-      els.cpuCitySelect.value = "";
-    } else {
-      els.cpuCityPicker.classList.add("hidden");
-      els.secretCityInput.disabled = false;
-    }
-    localEditing = forRole;
-    showModal("modal", true);
-    if (activeMode !== "cpu") els.secretCityInput.focus();
-  }
-  function closeCityModal() { showModal("modal", false); localEditing = null; }
-
-  // ── Reset ──────────────────────────────────────────────────────────
   function resetAll() {
+    showScreen("home");
+    clearLogUI();
+    els.questionInput.value = "";
+    els.guessInput.value = "";
+    els.questionDisplay.textContent = "—";
+    els.endMessage.textContent = "—";
+
+    // local reset
+    local.p1 = { name: "Player 1", city: "" };
+    local.p2 = { name: "Player 2", city: "" };
+    local.turn = "P1";
+    local.phase = "setup";
+    local.currentQuestion = "";
+    local.winner = null;
+
+    // online detach
     if (online.liveRef) online.liveRef.off();
     if (online.logRef && online.logListener) online.logRef.off("child_added", online.logListener);
     online.liveRef = null; online.logRef = null; online.logListener = null;
-    online.gameId = null; online.role = null;
+    online.gameId = null;
+    online.role = null;
 
-    showScreen("home"); clearLogUI();
-    els.questionInput.value = ""; els.guessInput.value = "";
-    els.questionDisplay.textContent = "—"; els.endMessage.textContent = "—";
-    activeMode = null; localEditing = null;
-
-    local.p1 = { name: "Player 1", city: "" };
-    local.p2 = { name: "Player 2", city: "" };
-    local.turn = "P1"; local.phase = "setup"; local.currentQuestion = ""; local.winner = null;
-
-    cpu.difficulty = "medium"; cpu.playerCity = null; cpu.cpuCity = null;
-    cpu.turn = "P1"; cpu.phase = "setup"; cpu.currentQuestion = ""; cpu.winner = null;
-    cpu.candidates = []; cpu.askedQs = [];
-
-    els.p1Name.value = "Player 1"; els.p2Name.value = "Player 2";
-    els.p2Name.disabled = false; els.btnSetP2.disabled = false;
-    els.btnSetP1.style.display = ""; els.btnSetP2.style.display = "";
-    els.roomLabel.textContent = "—"; els.roleLabel.textContent = "—";
+    els.roomLabel.textContent = "—";
+    els.roleLabel.textContent = "—";
     els.onlineStatus.textContent = "Firebase: —";
-    els.cpuDifficulty.value = "medium";
   }
 
-  // ── Wire events ────────────────────────────────────────────────────
+  // ---------------------------
+  // Wire UI
+  // ---------------------------
   els.btnReset.addEventListener("click", resetAll);
-  els.btnBackHome.addEventListener("click", resetAll);
+  els.btnBackHome.addEventListener("click", () => showScreen("home"));
 
   els.btnStartLocal.addEventListener("click", () => {
-    activeMode = "local"; showScreen("setup"); syncSetupUI();
-  });
-  els.btnStartCpu.addEventListener("click", () => {
-    activeMode = "cpu";
-    cpu.difficulty = els.cpuDifficulty.value || "medium";
-    cpu.playerCity = null;
-    cpu.cpuCity = CITY_DB[Math.floor(Math.random() * CITY_DB.length)];
-    cpu.candidates = CITY_DB.slice(); cpu.askedQs = [];
-    els.p2Name.value = "CPU";
-    showScreen("setup"); syncSetupUI();
+    activeMode = "local";
+    showScreen("setup");
+    localSyncSetupUI();
   });
 
   els.btnCreateRoom.addEventListener("click", async () => {
     activeMode = "online";
     try { await onlineCreateRoom(); } catch (e) { console.error(e); alert(e?.message || e); }
   });
+
   els.btnJoinRoom.addEventListener("click", async () => {
     activeMode = "online";
     try { await onlineJoinRoom(); } catch (e) { console.error(e); alert(e?.message || e); }
   });
 
   els.p1Name.addEventListener("blur", async () => {
-    if (activeMode === "local")  local.p1.name = (els.p1Name.value||"Player 1").trim().slice(0,18);
+    if (activeMode === "local") local.p1.name = (els.p1Name.value || "Player 1").trim().slice(0, 18);
     if (activeMode === "online" && online.role === "P1") await onlineSaveMyName();
   });
   els.p2Name.addEventListener("blur", async () => {
-    if (activeMode === "local")  local.p2.name = (els.p2Name.value||"Player 2").trim().slice(0,18);
+    if (activeMode === "local") local.p2.name = (els.p2Name.value || "Player 2").trim().slice(0, 18);
     if (activeMode === "online" && online.role === "P2") await onlineSaveMyName();
   });
 
   els.btnSetP1.addEventListener("click", () => {
-    if (activeMode === "local")                          return openCityModal("P1", "Hand the phone to Player 1 👀");
-    if (activeMode === "cpu")                            return openCityModal("P1", "Pick your city from the list.");
-    if (activeMode === "online" && online.role === "P1") return openCityModal("P1", "Your secret city — don't show your opponent!");
+    if (activeMode === "local") return openCityModal("P1", "Hand the phone to Player 1 👀");
+    if (activeMode === "online" && online.role === "P1") return openCityModal("P1", "Only Player 1 can set this.");
   });
   els.btnSetP2.addEventListener("click", () => {
-    if (activeMode === "local")                          return openCityModal("P2", "Hand the phone to Player 2 👀");
-    if (activeMode === "online" && online.role === "P2") return openCityModal("P2", "Your secret city — don't show your opponent!");
+    if (activeMode === "local") return openCityModal("P2", "Hand the phone to Player 2 👀");
+    if (activeMode === "online" && online.role === "P2") return openCityModal("P2", "Only Player 2 can set this.");
   });
 
   els.btnSaveCity.addEventListener("click", async () => {
-    if (activeMode === "cpu") {
-      const picked = els.cpuCitySelect.value; if (!picked) return;
-      cpu.playerCity = cityObjByName(picked);
-      closeCityModal(); syncSetupUI(); return;
-    }
-    const city = (els.secretCityInput.value || "").trim(); if (!city) return;
+    const city = (els.secretCityInput.value || "").trim();
+    if (!city) return;
+
     if (activeMode === "local") {
       if (localEditing === "P1") local.p1.city = city;
       if (localEditing === "P2") local.p2.city = city;
-      closeCityModal(); syncSetupUI(); return;
-    }
-    if (activeMode === "online") {
+      closeCityModal();
+      localSyncSetupUI();
+    } else if (activeMode === "online") {
       await onlineSaveMyCity(city);
       await onlineSaveMyName();
-      closeCityModal(); return;
+      closeCityModal();
     }
   });
 
-  els.secretCityInput.addEventListener("keydown", (e) => { if (e.key === "Enter") els.btnSaveCity.click(); });
   els.btnCancelCity.addEventListener("click", closeCityModal);
   els.btnCloseModal.addEventListener("click", closeCityModal);
 
   els.btnBeginGame.addEventListener("click", async () => {
-    if (activeMode === "local")  return localBegin();
-    if (activeMode === "cpu") {
-      if (!cpu.playerCity || !cpu.cpuCity) { logLine("Pick your city first!"); return; }
-      startCpuGame();
-    }
+    if (activeMode === "local") return localBegin();
     if (activeMode === "online") return onlineBeginGame();
   });
 
-  els.btnQuick.addEventListener("click",      () => showModal("quickModal", true));
-  els.btnQuickCpu.addEventListener("click",   () => showModal("quickModal", true));
+  els.btnQuick.addEventListener("click", () => showModal("quickModal", true));
   els.btnCloseQuick.addEventListener("click", () => showModal("quickModal", false));
 
   els.btnAsk.addEventListener("click", async () => {
-    if (activeMode === "local")  return localAsk();
+    if (activeMode === "local") return localAsk();
     if (activeMode === "online") return onlineAskQuestion();
   });
-  els.questionInput.addEventListener("keydown", (e) => { if (e.key === "Enter") els.btnAsk.click(); });
-
-  els.btnCpuAsk.addEventListener("click", () => { if (activeMode === "cpu") cpuAsk(); });
 
   els.btnYes.addEventListener("click", async () => {
-    if (activeMode === "local")  return localAnswer("Yes");
-    if (activeMode === "cpu")    return cpuHumanAnswers("Yes");
+    if (activeMode === "local") return localAnswer("Yes");
     if (activeMode === "online") return onlineAnswer("Yes");
   });
+
   els.btnNo.addEventListener("click", async () => {
-    if (activeMode === "local")  return localAnswer("No");
-    if (activeMode === "cpu")    return cpuHumanAnswers("No");
+    if (activeMode === "local") return localAnswer("No");
     if (activeMode === "online") return onlineAnswer("No");
   });
 
   els.btnGuess.addEventListener("click", async () => {
-    if (activeMode === "local")  return localOpenGuess();
+    if (activeMode === "local") return localOpenGuess();
     if (activeMode === "online") return onlineOpenGuess();
   });
-  els.btnGuessCpu.addEventListener("click", () => { if (activeMode === "cpu") cpuOpenGuess(); });
 
   els.btnCancelGuess.addEventListener("click", async () => {
-    if (activeMode === "local")  return localCancelGuess();
-    if (activeMode === "cpu")    return cpuCancelGuess();
+    if (activeMode === "local") return localCancelGuess();
     if (activeMode === "online") return onlineCancelGuess();
   });
+
   els.btnSubmitGuess.addEventListener("click", async () => {
-    if (activeMode === "local")  return localSubmitGuess();
-    if (activeMode === "cpu")    return cpuSubmitGuess();
+    if (activeMode === "local") return localSubmitGuess();
     if (activeMode === "online") return onlineSubmitGuess();
   });
-  els.guessInput.addEventListener("keydown", (e) => { if (e.key === "Enter") els.btnSubmitGuess.click(); });
 
-  // btnPlayAgain — replaces old btnRematch + btnToSetup (just go back to home)
-  els.btnPlayAgain.addEventListener("click", resetAll);
-
-  els.btnClearLog.addEventListener("click", async () => {
-    if (activeMode === "online") {
-      await onlineRef("log").set(null); clearLogUI();
-    } else {
-      clearLogUI();
-    }
+  els.btnRematch.addEventListener("click", async () => {
+    if (activeMode === "local") return localRematch();
+    if (activeMode === "online") return onlineRematch();
   });
 
-  // ── Boot ───────────────────────────────────────────────────────────
-  buildQuickList();
-  buildCpuQuestionSelect();
-  buildCpuCitySelect();
-  showScreen("home");
+  els.btnToSetup.addEventListener("click", async () => {
+    if (activeMode === "local") return localNewCities();
+    if (activeMode === "online") return onlineNewCities();
+  });
 
+  els.btnClearLog.addEventListener("click", async () => {
+    if (activeMode === "local") { clearLogUI(); return; }
+    if (activeMode === "online") return onlineClearLog();
+  });
+
+  // boot
+  buildQuickList();
+  showScreen("home");
 })();
