@@ -17,11 +17,6 @@
         <span class="title">City Guess</span>
       </div>
 
-      <!-- Fun mascots / theme (lightweight, doesn’t change layout) -->
-      <div class="mascots" aria-hidden="true" title="Retro critter squad">
-        <span class="m">🦖</span><span class="m">🦭</span><span class="m">🐉</span><span class="m">🗺️</span>
-      </div>
-
       <button id="btnReset" class="btn btn-ghost" title="Reset game">Reset</button>
     </header>
 
@@ -33,8 +28,8 @@
 
         <div class="grid2">
           <div class="card">
-            <h2 class="h2">Local (Easy Mode)</h2>
-            <p class="muted">One phone, two players. Secret cities stay hidden.</p>
+            <h2 class="h2">Local (One Phone)</h2>
+            <p class="muted">Pass-and-play, two players.</p>
             <button id="btnStartLocal" class="btn btn-primary btn-block">Start Local</button>
           </div>
 
@@ -50,7 +45,7 @@
 
         <div class="card">
           <h2 class="h2">Vs CPU</h2>
-          <p class="muted">Solo mode. Ask questions; the CPU answers. Make a guess any time.</p>
+          <p class="muted">You and CPU each pick a city. Take turns asking/answering.</p>
           <div class="grid2">
             <label class="field">
               <span>Difficulty</span>
@@ -60,19 +55,17 @@
                 <option value="hard">Hard</option>
               </select>
             </label>
-            <div class="stack">
-              <button id="btnStartCPU" class="btn btn-primary btn-block">Start vs CPU</button>
-            </div>
+            <button id="btnStartCPU" class="btn btn-primary btn-block">Start vs CPU</button>
           </div>
-          <p class="muted tiny">Tip: if the CPU can’t parse a question, it will say “Unsupported” — but you won’t lose your turn.</p>
+          <p class="muted tiny">CPU uses a built-in city list. You’ll choose your city from that list so it can actually guess it.</p>
         </div>
 
         <div class="card">
           <h2 class="h2">How to play</h2>
           <ol class="list">
-            <li>Choose a mode.</li>
-            <li>Ask yes/no questions.</li>
-            <li>Make a guess anytime on your turn.</li>
+            <li>Each side picks a secret city.</li>
+            <li>Take turns asking yes/no questions.</li>
+            <li>Guess anytime on your turn.</li>
           </ol>
         </div>
       </section>
@@ -96,7 +89,7 @@
           <div class="row tinyrow">
             <div class="pill">Room: <strong id="roomLabel">—</strong></div>
             <div class="pill">Role: <strong id="roleLabel">—</strong></div>
-            <div class="pill">Status: <strong id="onlineStatus">Firebase: —</strong></div>
+            <div class="pill">Status: <strong id="onlineStatus">—</strong></div>
           </div>
         </div>
 
@@ -116,7 +109,7 @@
 
         <div class="card">
           <h2 class="h2">Secret cities</h2>
-          <p class="muted">Local: pass the phone. Online: each phone sets its own city.</p>
+          <p class="muted">Local: pass the phone. Online: each phone sets its own city. CPU: pick YOUR city (P1) and CPU auto-picks (P2).</p>
 
           <div class="stack">
             <button id="btnSetP1" class="btn btn-secondary btn-block">Set Player 1 City</button>
@@ -153,7 +146,7 @@
             <h2 class="h2">Ask a yes/no question</h2>
             <label class="field">
               <span>Question</span>
-              <input id="questionInput" maxlength="80" placeholder="e.g., Is your city coastal?" />
+              <input id="questionInput" maxlength="90" placeholder="e.g., Is your city coastal?" />
             </label>
 
             <div class="grid2">
@@ -210,10 +203,21 @@
             <button id="btnCloseModal" class="btn btn-ghost tinybtn" aria-label="Close">✕</button>
           </div>
           <p class="muted tiny" id="modalHint">Make sure the other player isn't looking 👀</p>
-          <label class="field">
+
+          <div id="cpuPicker" class="cpu-picker hidden">
+            <label class="field">
+              <span>Search city list</span>
+              <input id="cpuCitySearch" maxlength="40" placeholder="Start typing (e.g., Oslo)..." autocomplete="off" />
+            </label>
+            <div id="cpuCityResults" class="cpu-results"></div>
+            <p class="muted tiny">Pick from the list so the CPU can guess your city correctly.</p>
+          </div>
+
+          <label class="field" id="manualCityField">
             <span>City</span>
             <input id="secretCityInput" maxlength="60" placeholder="e.g., Montevideo" autocomplete="off" />
           </label>
+
           <div class="grid2">
             <button id="btnSaveCity" class="btn btn-primary btn-block">Save</button>
             <button id="btnCancelCity" class="btn btn-ghost btn-block">Cancel</button>
