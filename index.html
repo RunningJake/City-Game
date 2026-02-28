@@ -1,255 +1,52 @@
+
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>City Guess</title>
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#0b0f14">
-  <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="style.css" />
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>City Guess – Retro Edition</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="app" class="app">
-    <header class="topbar">
-      <div class="brand">
-        <span class="logo" aria-hidden="true">★</span>
-        <div class="brandtext">
-          <div class="title">City Guess</div>
-          <div class="subtitle">
-            <span class="chip" title="Mode"><span class="dot"></span><span id="modeLabel">—</span></span>
-            <span class="chip" title="Room"><span class="dot2"></span><span id="roomLabel2">—</span></span>
-            <span class="chip" title="Role"><span class="dot3"></span><span id="roleLabel">—</span></span>
-          </div>
-        </div>
-      </div>
 
-      <div class="mascots" aria-hidden="true" title="Pixel pals">
-        <span class="mascot dino">🦖</span>
-        <span class="mascot sealion">🦭</span>
-        <span class="mascot nessie">🐉</span>
-      </div>
+<div class="mascot-bar">
+  <div class="mascot">🦖</div>
+  <div class="mascot">🦭</div>
+  <div class="mascot">🐉</div>
+  <div class="mascot">🌍</div>
+</div>
 
-      <button id="btnReset" class="btn btn-ghost" title="Reset game">Reset</button>
-    </header>
+<div class="container">
 
-    <main class="panel">
-      <section id="screenHome" class="screen">
-        <h1 class="h1">City Guess</h1>
-        <p class="muted">Two-phones online multiplayer • or solo vs CPU • pixel vibes.</p>
+  <h1 class="title">CITY GUESS</h1>
 
-        <div class="card">
-          <h2 class="h2">Online Multiplayer</h2>
-          <p class="muted">Two phones. Create a room, share the code, play live.</p>
-          <div class="grid2">
-            <button id="btnCreateRoom" class="btn btn-primary btn-block">Create Room</button>
-            <button id="btnJoinRoom" class="btn btn-secondary btn-block">Join Room</button>
-          </div>
-          <p class="muted tiny gap-top">Room: <strong id="roomLabel">—</strong> • <span id="onlineStatus">Firebase: —</span></p>
-        </div>
-
-        <div class="card">
-          <h2 class="h2">Vs CPU</h2>
-          <p class="muted">Play against the computer. (You’ll pick a city from the built-in list.)</p>
-
-          <label class="field">
-            <span>Difficulty</span>
-            <select id="cpuDifficulty">
-              <option value="easy">Easy</option>
-              <option value="medium" selected>Medium</option>
-              <option value="hard">Hard</option>
-            </select>
-          </label>
-
-          <button id="btnStartCPU" class="btn btn-primary btn-block">Start vs CPU</button>
-          <p class="muted tiny gap-top">CPU understands Quick Questions + a few common patterns.</p>
-        </div>
-
-        <div class="card">
-          <h2 class="h2">Local (one phone)</h2>
-          <p class="muted">Pass-and-play on one device.</p>
-          <button id="btnStartLocal" class="btn btn-secondary btn-block">Start Local</button>
-        </div>
-
-        <div class="card">
-          <h2 class="h2">How to play</h2>
-          <ol class="list">
-            <li>Each player chooses a secret city.</li>
-            <li>Take turns asking yes/no questions.</li>
-            <li>Make a guess anytime on your turn.</li>
-          </ol>
-        </div>
-      </section>
-
-      <section id="screenSetup" class="screen hidden">
-        <h1 class="h1">Setup</h1>
-
-        <div class="card">
-          <div class="row">
-            <div>
-              <div class="muted tiny">Mode</div>
-              <div class="h2" id="setupMode">—</div>
-            </div>
-            <div class="right">
-              <div class="muted tiny">Room</div>
-              <div class="h2" id="setupRoom">—</div>
-            </div>
-          </div>
-
-          <p id="setupHint" class="muted gap-top">—</p>
-        </div>
-
-        <div class="card">
-          <h2 class="h2">Player names</h2>
-          <div class="grid2">
-            <label class="field">
-              <span>Player 1</span>
-              <input id="p1Name" maxlength="18" placeholder="Player 1" />
-            </label>
-            <label class="field">
-              <span>Player 2</span>
-              <input id="p2Name" maxlength="18" placeholder="Player 2" />
-            </label>
-          </div>
-        </div>
-
-        <div class="card">
-          <h2 class="h2">Secret cities</h2>
-          <p class="muted">Use the buttons to set secret cities. In CPU mode, you’ll choose from the built-in list.</p>
-
-          <div class="stack">
-            <button id="btnSetP1" class="btn btn-secondary btn-block">Set Player 1 City</button>
-            <button id="btnSetP2" class="btn btn-secondary btn-block">Set Player 2 City</button>
-          </div>
-
-          <div class="grid2 gap-top">
-            <div class="pill" id="pillP1">P1 city: <strong id="p1CityStatus">not set</strong></div>
-            <div class="pill" id="pillP2">P2 city: <strong id="p2CityStatus">not set</strong></div>
-          </div>
-
-          <button id="btnBeginGame" class="btn btn-primary btn-block gap-top" disabled>Begin Game</button>
-          <button id="btnBackHome" class="btn btn-ghost btn-block">Back</button>
-        </div>
-      </section>
-
-      <section id="screenGame" class="screen hidden">
-        <div class="card">
-          <div class="row">
-            <div>
-              <div class="muted tiny">Turn</div>
-              <div class="h2" id="turnLabel">—</div>
-            </div>
-            <div class="right">
-              <div class="muted tiny">Phase</div>
-              <div class="h2" id="phaseLabel">—</div>
-            </div>
-          </div>
-
-          <div class="divider"></div>
-
-          <div id="askArea" class="stack">
-            <h2 class="h2">Ask a yes/no question</h2>
-            <label class="field">
-              <span>Question</span>
-              <input id="questionInput" maxlength="80" placeholder="e.g., Is your city coastal?" />
-            </label>
-
-            <div class="grid2">
-              <button id="btnAsk" class="btn btn-primary btn-block">Ask</button>
-              <button id="btnQuick" class="btn btn-secondary btn-block">Quick Qs</button>
-            </div>
-
-            <button id="btnGuess" class="btn btn-ghost btn-block">Make a guess</button>
-          </div>
-
-          <div id="answerArea" class="stack hidden">
-            <h2 class="h2">Answer</h2>
-            <div class="bubble" id="questionDisplay">—</div>
-            <div class="grid2">
-              <button id="btnYes" class="btn btn-primary btn-block">Yes</button>
-              <button id="btnNo" class="btn btn-danger btn-block">No</button>
-            </div>
-          </div>
-
-          <div id="guessArea" class="stack hidden">
-            <h2 class="h2">Make a guess</h2>
-            <label class="field">
-              <span>Your guess</span>
-              <input id="guessInput" maxlength="60" placeholder="Type the city..." />
-            </label>
-            <div class="grid2">
-              <button id="btnSubmitGuess" class="btn btn-primary btn-block">Submit</button>
-              <button id="btnCancelGuess" class="btn btn-ghost btn-block">Cancel</button>
-            </div>
-            <p class="muted tiny">Tip: spelling doesn't have to be perfect—CPU mode works best with built-in cities.</p>
-          </div>
-
-          <div id="endArea" class="stack hidden">
-            <h2 class="h2">Game Over</h2>
-            <div class="bubble" id="endMessage">—</div>
-            <div class="grid2">
-              <button id="btnRematch" class="btn btn-primary btn-block">Play Again</button>
-              <button id="btnBackHome2" class="btn btn-secondary btn-block">Home</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="row">
-            <h2 class="h2">Log</h2>
-            <button id="btnClearLog" class="btn btn-ghost tinybtn">Clear</button>
-          </div>
-          <div id="log" class="log"></div>
-        </div>
-      </section>
-
-      <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-        <div class="modal-card">
-          <div class="row">
-            <div class="h2" id="modalTitle">Enter secret city</div>
-            <button id="btnCloseModal" class="btn btn-ghost tinybtn" aria-label="Close">✕</button>
-          </div>
-          <p class="muted tiny" id="modalHint">Make sure the other player isn't looking 👀</p>
-          <label class="field">
-            <span>City</span>
-            <input id="secretCityInput" maxlength="60" placeholder="e.g., Montevideo" autocomplete="off" list="cityList" />
-            <datalist id="cityList"></datalist>
-          </label>
-          <div class="grid2">
-            <button id="btnSaveCity" class="btn btn-primary btn-block">Save</button>
-            <button id="btnCancelCity" class="btn btn-ghost btn-block">Cancel</button>
-          </div>
-          <p class="muted tiny gap-top" id="cpuCityHint" style="display:none;">CPU mode: pick a city from the dropdown list so the CPU can answer correctly.</p>
-        </div>
-      </div>
-
-      <div id="quickModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="quickTitle">
-        <div class="modal-card">
-          <div class="row">
-            <div class="h2" id="quickTitle">Quick Questions</div>
-            <button id="btnCloseQuick" class="btn btn-ghost tinybtn" aria-label="Close">✕</button>
-          </div>
-          <p class="muted tiny">Tap to insert a question.</p>
-          <div id="quickList" class="quicklist"></div>
-        </div>
-      </div>
-    </main>
-
-    <footer class="footer">
-      <span class="muted tiny">Offline-ready • Add to Home Screen • Pixel pals: 🦖🦭🐉</span>
-    </footer>
+  <div id="homeScreen">
+    <button id="startCPU">Play vs CPU</button>
+    <select id="difficulty">
+      <option value="easy">Easy</option>
+      <option value="medium">Medium</option>
+      <option value="hard">Hard</option>
+    </select>
   </div>
 
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-  <script src="firebase.js"></script>
+  <div id="gameScreen" class="hidden">
+    <div class="panel">
+      <div id="status"></div>
+      <input id="questionInput" placeholder="Ask a question..." />
+      <button id="askBtn">Ask</button>
+      <button id="guessBtn">Guess</button>
+      <div id="answerButtons" class="hidden">
+        <button id="yesBtn">Yes</button>
+        <button id="noBtn">No</button>
+      </div>
+      <input id="guessInput" class="hidden" placeholder="Type your guess..." />
+      <button id="submitGuess" class="hidden">Submit Guess</button>
+    </div>
+    <div id="log"></div>
+  </div>
 
-  <script src="app.js"></script>
+</div>
 
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(()=>{}));
-    }
-  </script>
+<script src="app.js"></script>
 </body>
 </html>
