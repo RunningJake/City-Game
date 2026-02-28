@@ -1,14 +1,11 @@
 // app.js — City Guess
-// Modes: Local pass-and-play | Online (Firebase Realtime DB) | vs CPU
-// ─────────────────────────────────────────────────────────────────────
-// CPU turn flow: P1 asks → CPU answers → CPU immediately asks P1 back → P1 answers → repeat
-// CPU uses candidate-elimination to guess when it narrows down to 1 city.
-// Online: host creates a room code, guest joins; Firebase syncs game state in real-time.
+// Online: uses the original working Firebase RTDB pattern (players/P1/city etc.)
+// CPU:    structured dropdown questions, elimination-based guessing
+// Local:  pass-and-play
 
 (() => {
   const $ = (id) => document.getElementById(id);
 
-  // ── Screens ────────────────────────────────────────────────────────
   const screens = { home: $("screenHome"), setup: $("screenSetup"), game: $("screenGame") };
   function showScreen(which) {
     Object.entries(screens).forEach(([k, el]) => el && el.classList.toggle("hidden", k !== which));
@@ -57,7 +54,7 @@
     "Is your city in a predominantly Buddhist country?",
   ];
 
-  // ── City database (40 cities) ──────────────────────────────────────
+  // ── City DB (40 cities) ────────────────────────────────────────────
   const CITY_DB = [
     { city:"Montevideo",   country:"Uruguay",      continent:"South America", hemisphere:"S", coastal:true,  landlocked:false, island:false, river:false, capital:true,  eu:false, us:false, g7:false, pop100m:false, metro2m:false, metro10m:false, lang:"Spanish",    tropical:false, snow:false, desert:false, financialHub:false, tourism:false, monarchy:false, founded1500:true,  muslim:false, christian:true,  buddhist:false },
     { city:"Lisbon",       country:"Portugal",     continent:"Europe",        hemisphere:"N", coastal:true,  landlocked:false, island:false, river:true,  capital:true,  eu:true,  us:false, g7:false, pop100m:false, metro2m:true,  metro10m:false, lang:"Portuguese", tropical:false, snow:false, desert:false, financialHub:false, tourism:true,  monarchy:false, founded1500:true,  muslim:false, christian:true,  buddhist:false },
@@ -151,9 +148,6 @@
   function normalizeCity(s) {
     return (s || "").toLowerCase().trim().replace(/[^\p{L}\p{N}\s]/gu, "").replace(/\s+/g, " ");
   }
-  function randomCode() {
-    return Math.random().toString(36).slice(2, 7).toUpperCase();
-  }
 
   // ── Build UI lists ─────────────────────────────────────────────────
   function buildQuickList() {
@@ -207,172 +201,261 @@
 
   const cpu = {
     difficulty: "medium",
-    playerCity: null,   // city obj from CITY_DB — human's secret city
-    cpuCity: null,      // city obj from CITY_DB — CPU's secret city
-    turn: "P1",         // P1 = human, P2 = CPU
+    playerCity: null,
+    cpuCity: null,
+    turn: "P1",
     phase: "setup",
     currentQuestion: "",
     winner: null,
-    candidates: [],     // cities CPU still considers for the human's city
-    askedQs: [],        // questions CPU has already asked
+    candidates: [],
+    askedQs: [],
   };
 
-  // ── Online (Firebase Realtime DB) ──────────────────────────────────
-  // Stored at /games/{roomCode}: { p1city, p2city, p1name, p2name,
-  //   turn, phase, currentQuestion, winner, log:[] }
+  // ── Online (original working Firebase pattern) ─────────────────────
+  // Mirrors the exact schema from the old working app.js:
+  //   /games/{gameId}/players/P1 = { owner, online, city, name, ... }
+  //   /games/{gameId}/players/P2 = { ... }
+  //   /games/{gameId}/phase, turn, currentQuestion, winner, log/...
+  const LS_KEY = "city_guess_online_identity_v2";
   const online = {
-    roomCode: null,
-    role: null,       // "P1" (host) or "P2" (guest)
-    ref: null,
-    unsubscribe: null,
-    state: {},
+    gameId: null,
+    role: null,
+    playerKey: null,
+    liveRef: null,
+    logRef: null,
+    logListener: null,
   };
 
-  function dbAvailable() {
-    return typeof db !== "undefined" && db && typeof db.ref === "function";
-  }
-  function onlineSetStatus(text) {
-    els.onlineStatus.textContent = "Firebase: " + text;
-  }
-  function onlinePush(patch) {
-    if (!online.ref) return;
-    online.ref.update(patch);
-  }
-  function onlineLogLine(text) {
-    if (!online.ref) return;
-    online.ref.child("log").transaction((cur) => {
-      const arr = Array.isArray(cur) ? cur : [];
-      arr.push(text);
-      if (arr.length > 80) arr.splice(0, arr.length - 80);
-      return arr;
-    });
+  function ensureIdentity() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(LS_KEY) || "null");
+      if (saved?.playerKey) return saved.playerKey;
+    } catch {}
+    const pk = "p_" + Math.random().toString(36).slice(2, 10);
+    localStorage.setItem(LS_KEY, JSON.stringify({ playerKey: pk }));
+    return pk;
   }
 
-  function onlineSubscribe(code) {
-    if (!dbAvailable()) return;
-    if (online.unsubscribe) { online.ref.off("value", online.unsubscribe); }
-    online.ref = db.ref("games/" + code);
-    online.unsubscribe = online.ref.on("value", (snap) => {
-      const data = snap.val();
-      if (!data) return;
-      online.state = data;
-      onlineApplyState(data);
-    });
+  function onlineRef(path = "") {
+    return db.ref("games/" + online.gameId + (path ? "/" + path : ""));
   }
 
-  function onlineApplyState(data) {
-    if (!data) return;
-    if (data.p1name) els.p1Name.value = data.p1name;
-    if (data.p2name) els.p2Name.value = data.p2name;
-    els.roomLabel.textContent  = online.roomCode || "—";
-    els.roleLabel.textContent  = online.role || "—";
-    els.roomLabel2.textContent = online.roomCode || "—";
+  async function claimRole() {
+    const playersRef = onlineRef("players");
+    const snap = await playersRef.once("value");
+    const players = snap.val() || {};
 
-    const p1set = !!(data.p1city);
-    const p2set = !!(data.p2city);
-    els.p1CityStatus.textContent = p1set ? "set ✓" : "not set";
-    els.p2CityStatus.textContent = p2set ? "set ✓" : "not set";
-    els.btnBeginGame.disabled = !(p1set && p2set);
-
-    if (data.phase === "setup") { syncSetupUI(); return; }
-
-    // ── Game is live ──
-    showScreen("game");
-
-    // Mirror into local state so syncGameUI works
-    local.turn            = data.turn || "P1";
-    local.phase           = data.phase || "ask";
-    local.currentQuestion = data.currentQuestion || "";
-    local.winner          = data.winner || null;
-
-    // Rebuild log
-    if (Array.isArray(data.log)) {
-      clearLogUI();
-      [...data.log].reverse().forEach(line => logLine(line));
+    // Reconnect: already own a slot
+    for (const r of ["P1", "P2"]) {
+      if (players?.[r]?.owner === online.playerKey) {
+        online.role = r;
+        await playersRef.child(r).update({ online: true, lastSeen: Date.now() });
+        return r;
+      }
     }
-
-    const p1Name = els.p1Name.value || "Player 1";
-    const p2Name = els.p2Name.value || "Player 2";
-    els.turnLabel.textContent = (local.turn === "P1" ? p1Name : p2Name) + "'s turn";
-    els.phaseLabel.textContent = local.phase;
-
-    els.askArea.classList.toggle("hidden",    local.phase !== "ask");
-    els.answerArea.classList.toggle("hidden", local.phase !== "answer");
-    els.guessArea.classList.toggle("hidden",  local.phase !== "guess");
-    els.endArea.classList.toggle("hidden",    local.phase !== "end");
-
-    // Free-text block always shown in online mode
-    els.freeQuestionBlock.classList.remove("hidden");
-    els.cpuQuestionBlock.classList.add("hidden");
-
-    const myTurn     = (local.turn === online.role);
-    const iAmAsking  = myTurn && local.phase === "ask";
-    const iAmGuessing = myTurn && local.phase === "guess";
-    // I answer when it's NOT my turn and there's a pending question
-    const iAmAnswering = !myTurn && local.phase === "answer";
-
-    els.btnAsk.disabled   = !iAmAsking;
-    els.btnQuick.disabled = !iAmAsking;
-    els.btnGuess.disabled = !iAmAsking;
-    els.btnYes.disabled   = !iAmAnswering;
-    els.btnNo.disabled    = !iAmAnswering;
-    els.btnSubmitGuess.disabled = !iAmGuessing;
-    els.btnCancelGuess.disabled = !iAmGuessing;
-
-    els.questionDisplay.textContent = local.currentQuestion || "—";
-
-    if (local.phase === "end" && local.winner) {
-      const winnerName = local.winner === "P1" ? p1Name : p2Name;
-      const secretCity = online.role === "P1" ? (data.p2city || "?") : (data.p1city || "?");
-      els.endMessage.textContent = `🎉 ${winnerName} wins! The secret city was: ${secretCity}`;
+    // Claim first empty slot
+    for (const r of ["P1", "P2"]) {
+      if (!players?.[r]?.owner) {
+        await playersRef.child(r).update({
+          owner: online.playerKey, online: true,
+          joinedAt: Date.now(), lastSeen: Date.now(),
+        });
+        online.role = r;
+        return r;
+      }
     }
+    online.role = null;
+    return null;
   }
 
-  function onlineCreateRoom() {
-    if (!dbAvailable()) {
-      onlineSetStatus("not connected — check firebase.js");
-      return;
-    }
-    const code = randomCode();
-    online.roomCode = code;
-    online.role = "P1";
-    activeMode = "online";
-    onlineSetStatus("hosting " + code);
+  function syncOnlineSetupUI(hint) {
+    els.modeLabel.textContent   = "Online";
+    els.roomLabel2.textContent  = online.gameId || "—";
+    els.roomLabel.textContent   = online.gameId || "—";
+    els.roleLabel.textContent   = online.role   || "—";
+    els.onlineStatus.textContent = "Firebase: connected";
+    els.setupHint.textContent   = hint || "Set your name & city. Player 1 starts the game.";
 
-    db.ref("games/" + code).set({
-      phase: "setup", turn: "P1", currentQuestion: "", winner: null,
-      p1city: "", p2city: "",
-      p1name: (els.p1Name.value || "Player 1"),
-      p2name: "Player 2",
-      log: [],
+    const isP1 = online.role === "P1";
+    els.p1Name.disabled   = !isP1;
+    els.btnSetP1.disabled = !isP1;
+    els.p2Name.disabled   =  isP1;
+    els.btnSetP2.disabled =  isP1;
+    els.btnBeginGame.disabled = !isP1;
+  }
+
+  function attachOnlineListeners() {
+    if (online.liveRef) online.liveRef.off();
+    if (online.logRef && online.logListener) online.logRef.off("child_added", online.logListener);
+
+    online.liveRef = onlineRef();
+    online.logRef  = onlineRef("log");
+
+    online.liveRef.on("value", (snap) => {
+      const g = snap.val();
+      if (!g) return;
+
+      const p1Set = !!g.players?.P1?.city;
+      const p2Set = !!g.players?.P2?.city;
+      els.p1CityStatus.textContent = p1Set ? "set ✓" : "not set";
+      els.p2CityStatus.textContent = p2Set ? "set ✓" : "not set";
+
+      if (g.players?.P1?.name && els.p1Name.disabled) els.p1Name.value = g.players.P1.name;
+      if (g.players?.P2?.name && els.p2Name.disabled) els.p2Name.value = g.players.P2.name;
+
+      if (online.role === "P1") {
+        els.btnBeginGame.disabled = !(p1Set && p2Set && g.phase === "setup");
+      }
+
+      if (g.phase && g.phase !== "setup") showScreen("game");
+
+      const myTurn = g.turn === online.role;
+      const p1Name = els.p1Name.value || "Player 1";
+      const p2Name = els.p2Name.value || "Player 2";
+
+      els.turnLabel.textContent  = (g.turn === "P1" ? p1Name : p2Name) + "'s turn";
+      els.phaseLabel.textContent = g.phase || "—";
+
+      els.askArea.classList.toggle("hidden",    g.phase !== "ask");
+      els.answerArea.classList.toggle("hidden", g.phase !== "answer");
+      els.guessArea.classList.toggle("hidden",  g.phase !== "guess");
+      els.endArea.classList.toggle("hidden",    g.phase !== "end");
+
+      // Free-text always shown in online (no CPU select)
+      els.freeQuestionBlock.classList.remove("hidden");
+      els.cpuQuestionBlock.classList.add("hidden");
+
+      els.btnAsk.disabled   = !(myTurn && g.phase === "ask");
+      els.btnQuick.disabled = !(myTurn && g.phase === "ask");
+      els.btnGuess.disabled = !(myTurn && g.phase === "ask");
+
+      els.btnYes.disabled = !(!myTurn && g.phase === "answer");
+      els.btnNo.disabled  = !(!myTurn && g.phase === "answer");
+
+      els.questionDisplay.textContent = g.currentQuestion || "—";
+
+      if (g.phase === "end" && g.winner) {
+        const winnerName = g.players?.[g.winner]?.name || g.winner;
+        // Show opponent's city as the answer
+        const opponentRole = online.role === "P1" ? "P2" : "P1";
+        const secretCity = g.players?.[opponentRole]?.city || "?";
+        els.endMessage.textContent = `🎉 ${winnerName} wins! The city was: ${secretCity}`;
+      }
+    }, (err) => {
+      console.error(err);
+      els.onlineStatus.textContent = "Firebase: error — " + (err?.message || err);
     });
 
-    onlineSubscribe(code);
+    clearLogUI();
+    online.logListener = (snap) => {
+      const v = snap.val();
+      if (v?.text) logLine(v.text);
+    };
+    online.logRef.limitToLast(100).on("child_added", online.logListener);
+  }
+
+  async function onlineCreateRoom() {
+    if (typeof db === "undefined") { alert("Firebase not ready. Check firebase.js."); return; }
+    online.playerKey = ensureIdentity();
+    const gid = Math.random().toString(36).slice(2, 8).toUpperCase();
+    online.gameId = gid;
+
+    await db.ref("games/" + gid).set({
+      status: "setup", phase: "setup", turn: "P1",
+      createdAt: Date.now(), currentQuestion: "", winner: null,
+      players: {
+        P1: { owner: online.playerKey, online: true, joinedAt: Date.now(), name: "Player 1", city: null },
+        P2: { owner: null, online: false, joinedAt: null, name: "Player 2", city: null },
+      },
+    });
+
+    await claimRole();
+    attachOnlineListeners();
     showScreen("setup");
-    syncSetupUI();
-    logLine("Room created: " + code + " — share this code with your opponent.");
+    syncOnlineSetupUI("You are Player 1. Set your name & city, then share the room code: " + gid);
+    alert("Room Code: " + gid + "\n\nShare this with your opponent!");
   }
 
-  function onlineJoinRoom() {
-    if (!dbAvailable()) {
-      onlineSetStatus("not connected — check firebase.js");
-      return;
-    }
-    const code = prompt("Enter room code:");
+  async function onlineJoinRoom() {
+    if (typeof db === "undefined") { alert("Firebase not ready. Check firebase.js."); return; }
+    online.playerKey = ensureIdentity();
+    const code = prompt("Enter Room Code:");
     if (!code) return;
-    const codeUpper = code.trim().toUpperCase();
+    const gid = code.trim().toUpperCase();
+    online.gameId = gid;
 
-    db.ref("games/" + codeUpper).once("value", (snap) => {
-      if (!snap.val()) { alert("Room not found: " + codeUpper); return; }
-      online.roomCode = codeUpper;
-      online.role = "P2";
-      activeMode = "online";
-      onlineSetStatus("joined " + codeUpper);
-      db.ref("games/" + codeUpper).update({ p2name: els.p2Name.value || "Player 2" });
-      onlineSubscribe(codeUpper);
-      showScreen("setup");
-      syncSetupUI();
-    });
+    const snap = await db.ref("games/" + gid).once("value");
+    if (!snap.exists()) { alert("Room not found: " + gid); online.gameId = null; return; }
+
+    await claimRole();
+    if (!online.role) { alert("Room is full."); online.gameId = null; return; }
+
+    attachOnlineListeners();
+    showScreen("setup");
+    syncOnlineSetupUI(`You are ${online.role}. Set your name & city.`);
+  }
+
+  async function onlineSaveMyName() {
+    if (!online.role) return;
+    const input = online.role === "P1" ? els.p1Name : els.p2Name;
+    const name = (input.value || "").trim().slice(0, 18) || online.role;
+    await onlineRef(`players/${online.role}/name`).set(name);
+  }
+
+  async function onlineSaveMyCity(city) {
+    if (!online.role) return;
+    const clean = (city || "").trim().slice(0, 60);
+    if (!clean) return;
+    await onlineRef(`players/${online.role}/city`).set(clean);
+  }
+
+  async function onlineBeginGame() {
+    const snap = await onlineRef().once("value");
+    const g = snap.val();
+    if (!g?.players?.P1?.city || !g?.players?.P2?.city) {
+      alert("Both players must set a city first."); return;
+    }
+    await onlineRef().update({ status: "playing", phase: "ask", turn: "P1", currentQuestion: "", winner: null });
+    await onlineRef("log").push({ t: Date.now(), text: "Game started! 🎯" });
+  }
+
+  async function onlineAskQuestion() {
+    const q = (els.questionInput.value || "").trim(); if (!q) return;
+    await onlineRef().update({ currentQuestion: q, phase: "answer" });
+    const name = online.role === "P1" ? (els.p1Name.value||"P1") : (els.p2Name.value||"P2");
+    await onlineRef("log").push({ t: Date.now(), text: `${name} asked: ${q}` });
+    els.questionInput.value = "";
+  }
+
+  async function onlineAnswer(ans) {
+    const snap = await onlineRef().once("value");
+    const g = snap.val(); if (!g) return;
+    const nextTurn = g.turn === "P1" ? "P2" : "P1";
+    await onlineRef().update({ phase: "ask", turn: nextTurn, currentQuestion: "" });
+    const name = online.role === "P1" ? (els.p1Name.value||"P1") : (els.p2Name.value||"P2");
+    await onlineRef("log").push({ t: Date.now(), text: `${name} answered: ${ans}` });
+  }
+
+  async function onlineOpenGuess()   { await onlineRef().update({ phase: "guess" }); }
+  async function onlineCancelGuess() { await onlineRef().update({ phase: "ask"   }); }
+
+  async function onlineSubmitGuess() {
+    const guess = (els.guessInput.value || "").trim(); if (!guess) return;
+    const snap = await onlineRef().once("value");
+    const g = snap.val(); if (!g) return;
+    const opponent = online.role === "P1" ? "P2" : "P1";
+    const opponentCity = g.players?.[opponent]?.city || "";
+    const ok = normalizeCity(guess) === normalizeCity(opponentCity);
+    const name = online.role === "P1" ? (els.p1Name.value||"P1") : (els.p2Name.value||"P2");
+    if (ok) {
+      await onlineRef().update({ phase: "end", winner: online.role });
+      await onlineRef("log").push({ t: Date.now(), text: `${name} guessed "${guess}" — CORRECT! 🎉` });
+    } else {
+      const nextTurn = g.turn === "P1" ? "P2" : "P1";
+      await onlineRef().update({ phase: "ask", turn: nextTurn });
+      await onlineRef("log").push({ t: Date.now(), text: `${name} guessed "${guess}" — wrong.` });
+    }
+    els.guessInput.value = "";
   }
 
   // ── Setup UI sync ──────────────────────────────────────────────────
@@ -399,21 +482,9 @@
       els.p2CityStatus.textContent = local.p2.city ? "set ✓" : "not set";
       return;
     }
-    if (activeMode === "online") {
-      els.modeLabel.textContent = "Online";
-      els.roomLabel2.textContent = online.roomCode || "—";
-      els.setupHint.textContent = online.role === "P1"
-        ? `You're the host. Room code: ${online.roomCode} — share it with your opponent, then both set your cities.`
-        : `You joined room ${online.roomCode}. Set your city and wait for host to begin.`;
-      els.btnSetP1.disabled = (online.role !== "P1");
-      els.btnSetP2.disabled = (online.role !== "P2");
-      els.p1Name.disabled = (online.role !== "P1");
-      els.p2Name.disabled = (online.role !== "P2");
-      return;
-    }
   }
 
-  // ── Game UI sync (local + cpu only; online uses onlineApplyState) ──
+  // ── Game UI sync (local + cpu) ─────────────────────────────────────
   function syncGameUI() {
     const turn  = activeMode === "cpu" ? cpu.turn  : local.turn;
     const phase = activeMode === "cpu" ? cpu.phase : local.phase;
@@ -436,7 +507,6 @@
       els.btnCpuAsk.disabled   = !(humanTurn && phase === "ask");
       els.btnQuickCpu.disabled = !(humanTurn && phase === "ask");
       els.btnGuessCpu.disabled = !(humanTurn && phase === "ask");
-      // Yes/No only active when CPU has asked and human must answer
       els.btnYes.disabled = !(phase === "answer" && cpu.turn === "P2");
       els.btnNo.disabled  = !(phase === "answer" && cpu.turn === "P2");
     } else {
@@ -457,7 +527,7 @@
         const secretCity = activeMode === "cpu"
           ? (winner === "P1" ? cpu.cpuCity?.city : cpu.playerCity?.city)
           : (winner === "P1" ? local.p2.city : local.p1.city);
-        els.endMessage.textContent = `🎉 ${winnerName} wins! The secret city was: ${secretCity}`;
+        els.endMessage.textContent = `🎉 ${winnerName} wins! The city was: ${secretCity}`;
       } else {
         els.endMessage.textContent = "Game over!";
       }
@@ -513,7 +583,7 @@
   function cpuEliminate(q, ans) {
     cpu.candidates = cpu.candidates.filter(c => {
       const expected = cpuAnswerQ(q, c);
-      if (expected === null) return true; // unknown: keep
+      if (expected === null) return true;
       return expected === (ans === "Yes");
     });
   }
@@ -527,7 +597,7 @@
       const src = pref.length ? pref : pool;
       return src[Math.floor(Math.random() * src.length)];
     }
-    // Hard: max information gain — pick question that splits candidates most evenly
+    // Hard: pick question that splits candidates most evenly
     let best = pool[0], bestScore = Infinity;
     for (const q of pool) {
       let yes = 0;
@@ -555,44 +625,37 @@
 
     logLine(`You asked: ${q}`);
     const ans = cpuAnswerQ(q, cpu.cpuCity);
-    if (ans === null) { logLine("CPU: I can't answer that one. Pick another."); return; }
+    if (ans === null) { logLine("CPU: I can't answer that. Pick another."); return; }
 
     logLine(`CPU answered: ${ans ? "Yes ✓" : "No ✗"}`);
     els.cpuQuestionSelect.value = "";
     cpu.currentQuestion = "";
 
-    // ── CPU's turn to ask back ──
+    // CPU's turn to ask back
     cpu.turn = "P2";
-    cpu.phase = "ask"; // brief interim; will be set to "answer" in setTimeout
-    syncGameUI();      // show "CPU's turn" while we wait
+    cpu.phase = "ask";
+    syncGameUI(); // brief "CPU thinking" state
 
     window.setTimeout(() => {
-      // Check if CPU is confident enough to guess
-      if (cpu.candidates.length === 1) {
-        cpuGuessNow(); return;
-      }
+      if (cpu.candidates.length === 1) { cpuGuessNow(); return; }
       const cpuQ = cpuPickQ();
       cpu.askedQs.push(cpuQ);
       cpu.currentQuestion = cpuQ;
       logLine(`CPU asks: ${cpuQ}`);
-      cpu.phase = "answer"; // human must now answer
-      // turn stays "P2" so Yes/No buttons enable correctly
+      cpu.phase = "answer"; // human must answer; turn stays "P2"
       syncGameUI();
     }, 400);
   }
 
   // Human answers CPU's question
   function cpuHumanAnswers(ans) {
-    const q = cpu.currentQuestion;
-    if (!q) return;
+    const q = cpu.currentQuestion; if (!q) return;
     logLine(`You answered: ${ans}`);
     cpuEliminate(q, ans);
-    const remaining = cpu.candidates.length;
-    logLine(`CPU has ${remaining} city${remaining === 1 ? "" : "/cities"} left.`);
+    const n = cpu.candidates.length;
+    logLine(`CPU has ${n} city${n === 1 ? "" : "/cities"} left.`);
     cpu.currentQuestion = "";
-    // Turn passes back to human
-    cpu.turn = "P1";
-    cpu.phase = "ask";
+    cpu.turn = "P1"; cpu.phase = "ask";
     syncGameUI();
   }
 
@@ -606,7 +669,7 @@
         logLine(`CPU was right — it was ${guess}! CPU wins 🤖`);
       } else {
         logLine(`CPU guessed wrong (${guess}). Back to you!`);
-        cpu.candidates = CITY_DB.slice(); // reset candidates
+        cpu.candidates = CITY_DB.slice(); // reset
         cpu.turn = "P1"; cpu.phase = "ask";
       }
       syncGameUI();
@@ -617,8 +680,7 @@
   function cpuCancelGuess() { cpu.phase = "ask";   syncGameUI(); }
 
   function cpuSubmitGuess() {
-    const guess = (els.guessInput.value || "").trim();
-    if (!guess) return;
+    const guess = (els.guessInput.value || "").trim(); if (!guess) return;
     els.guessInput.value = "";
     const ok = normalizeCity(guess) === normalizeCity(cpu.cpuCity?.city || "");
     if (ok) {
@@ -653,20 +715,18 @@
   function localAsk() {
     const q = (els.questionInput.value || "").trim(); if (!q) return;
     local.currentQuestion = q; local.phase = "answer";
-    const askerName = local.turn === "P1" ? (els.p1Name.value||"P1") : (els.p2Name.value||"P2");
-    logLine(`${askerName} asked: ${q}`);
+    const name = local.turn === "P1" ? (els.p1Name.value||"P1") : (els.p2Name.value||"P2");
+    logLine(`${name} asked: ${q}`);
     els.questionInput.value = "";
     syncGameUI();
   }
 
   function localAnswer(ans) {
-    const asker    = local.turn;
-    const answerer = asker === "P1" ? "P2" : "P1";
-    const aName    = answerer === "P1" ? (els.p1Name.value||"P1") : (els.p2Name.value||"P2");
+    const answerer = local.turn === "P1" ? "P2" : "P1";
+    const aName = answerer === "P1" ? (els.p1Name.value||"P1") : (els.p2Name.value||"P2");
     logLine(`${aName} answered: ${ans}`);
     local.currentQuestion = "";
-    local.turn  = answerer; // answerer becomes next asker
-    local.phase = "ask";
+    local.turn = answerer; local.phase = "ask";
     syncGameUI();
   }
 
@@ -675,7 +735,7 @@
 
   function localSubmitGuess() {
     const guess = (els.guessInput.value || "").trim(); if (!guess) return;
-    const opponent     = local.turn === "P1" ? "P2" : "P1";
+    const opponent = local.turn === "P1" ? "P2" : "P1";
     const opponentCity = opponent === "P1" ? local.p1.city : local.p2.city;
     const ok = normalizeCity(guess) === normalizeCity(opponentCity);
     const gName = local.turn === "P1" ? (els.p1Name.value||"P1") : (els.p2Name.value||"P2");
@@ -687,48 +747,6 @@
       local.turn = opponent; local.phase = "ask";
     }
     els.guessInput.value = ""; syncGameUI();
-  }
-
-  // ── Online ask/answer/guess ────────────────────────────────────────
-  function onlineAsk() {
-    const q = (els.questionInput.value || "").trim(); if (!q) return;
-    if (local.turn !== online.role) return;
-    const askerName = online.role === "P1" ? (els.p1Name.value||"P1") : (els.p2Name.value||"P2");
-    onlinePush({ currentQuestion: q, phase: "answer" });
-    onlineLogLine(`${askerName} asked: ${q}`);
-    els.questionInput.value = "";
-  }
-
-  function onlineAnswer(ans) {
-    if (local.phase !== "answer") return;
-    if (local.turn === online.role) return; // you don't answer your own question
-    const aName = online.role === "P1" ? (els.p1Name.value||"P1") : (els.p2Name.value||"P2");
-    const nextTurn = local.turn === "P1" ? "P2" : "P1";
-    onlinePush({ phase: "ask", turn: nextTurn, currentQuestion: "" });
-    onlineLogLine(`${aName} answered: ${ans}`);
-  }
-
-  function onlineOpenGuess()   { if (local.turn === online.role) onlinePush({ phase: "guess" }); }
-  function onlineCancelGuess() { onlinePush({ phase: "ask" }); }
-
-  function onlineSubmitGuess() {
-    const guess = (els.guessInput.value || "").trim(); if (!guess) return;
-    if (local.turn !== online.role) return;
-    online.ref.once("value", (snap) => {
-      const data = snap.val() || {};
-      const opponentRole = online.role === "P1" ? "P2" : "P1";
-      const opponentCity = opponentRole === "P1" ? data.p1city : data.p2city;
-      const ok = normalizeCity(guess) === normalizeCity(opponentCity || "");
-      const gName = online.role === "P1" ? (els.p1Name.value||"P1") : (els.p2Name.value||"P2");
-      if (ok) {
-        onlinePush({ phase: "end", winner: online.role });
-        onlineLogLine(`${gName} guessed "${guess}" — CORRECT! 🎉`);
-      } else {
-        onlinePush({ phase: "ask", turn: opponentRole });
-        onlineLogLine(`${gName} guessed "${guess}" — wrong.`);
-      }
-      els.guessInput.value = "";
-    });
   }
 
   // ── City modal ─────────────────────────────────────────────────────
@@ -753,9 +771,10 @@
 
   // ── Reset ──────────────────────────────────────────────────────────
   function resetAll() {
-    if (online.ref && online.unsubscribe) online.ref.off("value", online.unsubscribe);
-    online.roomCode = null; online.role = null;
-    online.ref = null; online.unsubscribe = null; online.state = {};
+    if (online.liveRef) online.liveRef.off();
+    if (online.logRef && online.logListener) online.logRef.off("child_added", online.logListener);
+    online.liveRef = null; online.logRef = null; online.logListener = null;
+    online.gameId = null; online.role = null;
 
     showScreen("home"); clearLogUI();
     els.questionInput.value = ""; els.guessInput.value = "";
@@ -770,9 +789,9 @@
     cpu.turn = "P1"; cpu.phase = "setup"; cpu.currentQuestion = ""; cpu.winner = null;
     cpu.candidates = []; cpu.askedQs = [];
 
+    els.p1Name.value = "Player 1"; els.p2Name.value = "Player 2";
     els.p2Name.disabled = false; els.btnSetP2.disabled = false;
     els.btnSetP1.style.display = ""; els.btnSetP2.style.display = "";
-    els.p1Name.value = "Player 1"; els.p2Name.value = "Player 2";
     els.roomLabel.textContent = "—"; els.roleLabel.textContent = "—";
     els.onlineStatus.textContent = "Firebase: —";
     els.cpuDifficulty.value = "medium";
@@ -795,16 +814,22 @@
     showScreen("setup"); syncSetupUI();
   });
 
-  els.btnCreateRoom.addEventListener("click", onlineCreateRoom);
-  els.btnJoinRoom.addEventListener("click",   onlineJoinRoom);
-
-  els.p1Name.addEventListener("blur", () => {
-    if (activeMode === "local")  local.p1.name = (els.p1Name.value||"Player 1").trim().slice(0,18);
-    if (activeMode === "online" && online.ref) online.ref.update({ p1name: els.p1Name.value });
+  els.btnCreateRoom.addEventListener("click", async () => {
+    activeMode = "online";
+    try { await onlineCreateRoom(); } catch (e) { console.error(e); alert(e?.message || e); }
   });
-  els.p2Name.addEventListener("blur", () => {
+  els.btnJoinRoom.addEventListener("click", async () => {
+    activeMode = "online";
+    try { await onlineJoinRoom(); } catch (e) { console.error(e); alert(e?.message || e); }
+  });
+
+  els.p1Name.addEventListener("blur", async () => {
+    if (activeMode === "local")  local.p1.name = (els.p1Name.value||"Player 1").trim().slice(0,18);
+    if (activeMode === "online" && online.role === "P1") await onlineSaveMyName();
+  });
+  els.p2Name.addEventListener("blur", async () => {
     if (activeMode === "local")  local.p2.name = (els.p2Name.value||"Player 2").trim().slice(0,18);
-    if (activeMode === "online" && online.ref) online.ref.update({ p2name: els.p2Name.value });
+    if (activeMode === "online" && online.role === "P2") await onlineSaveMyName();
   });
 
   els.btnSetP1.addEventListener("click", () => {
@@ -817,7 +842,7 @@
     if (activeMode === "online" && online.role === "P2") return openCityModal("P2", "Your secret city — don't show your opponent!");
   });
 
-  els.btnSaveCity.addEventListener("click", () => {
+  els.btnSaveCity.addEventListener("click", async () => {
     if (activeMode === "cpu") {
       const picked = els.cpuCitySelect.value; if (!picked) return;
       cpu.playerCity = cityObjByName(picked);
@@ -829,9 +854,9 @@
       if (localEditing === "P2") local.p2.city = city;
       closeCityModal(); syncSetupUI(); return;
     }
-    if (activeMode === "online" && online.ref) {
-      const field = online.role === "P1" ? "p1city" : "p2city";
-      online.ref.update({ [field]: city });
+    if (activeMode === "online") {
+      await onlineSaveMyCity(city);
+      await onlineSaveMyName();
       closeCityModal(); return;
     }
   });
@@ -840,62 +865,66 @@
   els.btnCancelCity.addEventListener("click", closeCityModal);
   els.btnCloseModal.addEventListener("click", closeCityModal);
 
-  els.btnBeginGame.addEventListener("click", () => {
-    if (activeMode === "local") return localBegin();
+  els.btnBeginGame.addEventListener("click", async () => {
+    if (activeMode === "local")  return localBegin();
     if (activeMode === "cpu") {
       if (!cpu.playerCity || !cpu.cpuCity) { logLine("Pick your city first!"); return; }
       startCpuGame();
     }
-    if (activeMode === "online") {
-      // Only P1 (host) can begin
-      if (online.role !== "P1") return;
-      onlinePush({ phase: "ask", turn: "P1" });
-    }
+    if (activeMode === "online") return onlineBeginGame();
   });
 
   els.btnQuick.addEventListener("click",      () => showModal("quickModal", true));
   els.btnQuickCpu.addEventListener("click",   () => showModal("quickModal", true));
   els.btnCloseQuick.addEventListener("click", () => showModal("quickModal", false));
 
-  els.btnAsk.addEventListener("click", () => {
+  els.btnAsk.addEventListener("click", async () => {
     if (activeMode === "local")  return localAsk();
-    if (activeMode === "online") return onlineAsk();
+    if (activeMode === "online") return onlineAskQuestion();
   });
   els.questionInput.addEventListener("keydown", (e) => { if (e.key === "Enter") els.btnAsk.click(); });
 
   els.btnCpuAsk.addEventListener("click", () => { if (activeMode === "cpu") cpuAsk(); });
 
-  els.btnYes.addEventListener("click", () => {
+  els.btnYes.addEventListener("click", async () => {
     if (activeMode === "local")  return localAnswer("Yes");
     if (activeMode === "cpu")    return cpuHumanAnswers("Yes");
     if (activeMode === "online") return onlineAnswer("Yes");
   });
-  els.btnNo.addEventListener("click", () => {
+  els.btnNo.addEventListener("click", async () => {
     if (activeMode === "local")  return localAnswer("No");
     if (activeMode === "cpu")    return cpuHumanAnswers("No");
     if (activeMode === "online") return onlineAnswer("No");
   });
 
-  els.btnGuess.addEventListener("click", () => {
+  els.btnGuess.addEventListener("click", async () => {
     if (activeMode === "local")  return localOpenGuess();
     if (activeMode === "online") return onlineOpenGuess();
   });
   els.btnGuessCpu.addEventListener("click", () => { if (activeMode === "cpu") cpuOpenGuess(); });
 
-  els.btnCancelGuess.addEventListener("click", () => {
+  els.btnCancelGuess.addEventListener("click", async () => {
     if (activeMode === "local")  return localCancelGuess();
     if (activeMode === "cpu")    return cpuCancelGuess();
     if (activeMode === "online") return onlineCancelGuess();
   });
-  els.btnSubmitGuess.addEventListener("click", () => {
+  els.btnSubmitGuess.addEventListener("click", async () => {
     if (activeMode === "local")  return localSubmitGuess();
     if (activeMode === "cpu")    return cpuSubmitGuess();
     if (activeMode === "online") return onlineSubmitGuess();
   });
   els.guessInput.addEventListener("keydown", (e) => { if (e.key === "Enter") els.btnSubmitGuess.click(); });
 
+  // btnPlayAgain — replaces old btnRematch + btnToSetup (just go back to home)
   els.btnPlayAgain.addEventListener("click", resetAll);
-  els.btnClearLog.addEventListener("click", clearLogUI);
+
+  els.btnClearLog.addEventListener("click", async () => {
+    if (activeMode === "online") {
+      await onlineRef("log").set(null); clearLogUI();
+    } else {
+      clearLogUI();
+    }
+  });
 
   // ── Boot ───────────────────────────────────────────────────────────
   buildQuickList();
