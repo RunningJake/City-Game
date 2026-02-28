@@ -49,6 +49,9 @@
   // Shared UI elements
   // ---------------------------
   const els = {
+    btnStartCPU: $("btnStartCPU"),
+    cpuDifficulty: $("cpuDifficulty"),
+    
     btnReset: $("btnReset"),
     btnBackHome: $("btnBackHome"),
     btnStartLocal: $("btnStartLocal"),
@@ -205,6 +208,47 @@
     local.currentQuestion = q;
     local.phase = "answer";
     logLine(`${local.turn} asked: ${q}`);
+
+    if (cpu.enabled && local.turn === "P1") {
+      const key = parseQuestionKey(q);
+      if (!key) {
+        // Unknown question type: answer "I don't know" as No (or prompt)
+        // Keeping it simple:
+        local.currentQuestion = q;
+        local.phase = "answer";
+        localSyncGameUI();
+        // CPU "answers" immediately (treat unknown as "No" on easy, "Can't answer" on hard)
+        const fallback = (cpu.difficulty === "hard") ? "No" : "No";
+        setTimeout(() => {
+          logLine(`CPU answered: ${fallback} (unsupported question)`);
+          local.currentQuestion = "";
+          local.turn = "P2";
+          local.phase = "ask";
+          localSyncGameUI();
+          setTimeout(cpuTakeTurn, 400);
+        }, 400);
+        return;
+      }
+    
+      const ans = evalPredicate(cpu.secret, key) ? "Yes" : "No";
+    
+      // Optional: Easy mode makes mistakes sometimes (10%)
+      const mistake = cpu.difficulty === "easy" && Math.random() < 0.10;
+      const finalAns = mistake ? (ans === "Yes" ? "No" : "Yes") : ans;
+    
+      setTimeout(() => {
+        logLine(`CPU answered: ${finalAns}`);
+        local.currentQuestion = "";
+        local.turn = "P2";
+        local.phase = "ask";
+        localSyncGameUI();
+        setTimeout(cpuTakeTurn, 450);
+      }, 450);
+    
+      return;
+    }
+
+    
     els.questionInput.value = "";
     localSyncGameUI();
   }
@@ -212,6 +256,20 @@
   function localAnswer(ans) {
     const answerer = local.turn === "P1" ? "P2" : "P1";
     logLine(`${answerer} answered: ${ans}`);
+  
+    // 🔥 PART G GOES HERE
+    // If CPU asked the question (so it's currently P2's turn),
+    // and the human just answered, filter CPU candidates.
+    if (cpu.enabled && local.turn === "P2") {
+      const yes = ans === "Yes";
+      const key = cpu.lastAskedKey;
+      if (key) {
+        cpu.candidates = cpu.candidates.filter(c =>
+          evalPredicate(c, key) === yes
+        );
+      }
+    }
+  
     local.currentQuestion = "";
     local.turn = answerer;
     local.phase = "ask";
@@ -259,6 +317,202 @@
     localSyncSetupUI();
   }
 
+
+  function cpuTakeTurn() {
+    if (!cpu.enabled) return;
+    if (local.phase !== "ask" || local.turn !== "P2") return;
+    if (!local.p1.city) return;
+  
+    // Decide if CPU should guess YOUR city (uses exact match here)
+    const guessThreshold = cpu.difficulty === "hard" ? 5 : cpu.difficulty === "medium" ? 3 : 2;
+    if (cpu.candidates.length <= guessThreshold) {
+      const g = cpu.candidates[Math.floor(Math.random() * cpu.candidates.length)];
+      logLine(`CPU guesses: "${g.name}"`);
+      if (normalizeCity(g.name) === normalizeCity(local.p1.city)) {
+        local.phase = "end";
+        local.winner = "P2";
+        localSyncGameUI();
+        return;
+      } else {
+        logLine("You: No (wrong)");
+        // Remove guessed
+        cpu.candidates = cpu.candidates.filter(x => normalizeCity(x.name) !== normalizeCity(g.name));
+        local.turn = "P1";
+        local.phase = "ask";
+        localSyncGameUI();
+        return;
+      }
+    }
+  
+    // Ask a question key
+    const key = cpuChooseBestQuestionKey();
+    cpu.lastAskedKey = key;
+    const text = keyToQuestionText(key);
+    local.currentQuestion = text;
+    local.phase = "answer";
+    localSyncGameUI();
+    logLine(`CPU asked: ${text}`);
+  }
+
+// ---------------------------
+// CPU MODE (local opponent)
+// ---------------------------
+const cpu = {
+  enabled: false,
+  difficulty: "medium",
+  // CPU secret city + attributes
+  secret: null,
+  // CPU's candidate set for YOUR city (used when CPU asks questions)
+  candidates: [],
+  lastAskedKey: null,
+};
+
+// Minimal starter city DB (expand anytime)
+// Attributes: continent, hemiNS, hemiEW, coastal, capital, eu, island, lang, pop
+const CITY_DB = [
+  { name:"London", continent:"europe", hemiNS:"north", hemiEW:"east", coastal:false, capital:true,  eu:false, island:false, lang:"english", pop:"mega" },
+  { name:"Paris", continent:"europe", hemiNS:"north", hemiEW:"east", coastal:false, capital:true,  eu:true,  island:false, lang:"french",  pop:"mega" },
+  { name:"Madrid", continent:"europe", hemiNS:"north", hemiEW:"west", coastal:false, capital:true,  eu:true,  island:false, lang:"spanish", pop:"mega" },
+  { name:"Rome", continent:"europe", hemiNS:"north", hemiEW:"east", coastal:false, capital:true,  eu:true,  island:false, lang:"italian", pop:"mega" },
+  { name:"Lisbon", continent:"europe", hemiNS:"north", hemiEW:"west", coastal:true,  capital:true,  eu:true,  island:false, lang:"portuguese", pop:"big" },
+  { name:"Berlin", continent:"europe", hemiNS:"north", hemiEW:"east", coastal:false, capital:true,  eu:true,  island:false, lang:"german", pop:"mega" },
+  { name:"Stockholm", continent:"europe", hemiNS:"north", hemiEW:"east", coastal:true, capital:true, eu:true, island:false, lang:"other", pop:"big" },
+  { name:"Athens", continent:"europe", hemiNS:"north", hemiEW:"east", coastal:true,  capital:true,  eu:true,  island:false, lang:"other", pop:"big" },
+  { name:"Dublin", continent:"europe", hemiNS:"north", hemiEW:"west", coastal:true,  capital:true,  eu:true,  island:true,  lang:"english", pop:"mid" },
+
+  { name:"New York", continent:"north_america", hemiNS:"north", hemiEW:"west", coastal:true,  capital:false, eu:false, island:false, lang:"english", pop:"mega" },
+  { name:"Washington, DC", continent:"north_america", hemiNS:"north", hemiEW:"west", coastal:false, capital:true, eu:false, island:false, lang:"english", pop:"big" },
+  { name:"Mexico City", continent:"north_america", hemiNS:"north", hemiEW:"west", coastal:false, capital:true, eu:false, island:false, lang:"spanish", pop:"mega" },
+  { name:"Toronto", continent:"north_america", hemiNS:"north", hemiEW:"west", coastal:false, capital:false, eu:false, island:false, lang:"english", pop:"mega" },
+
+  { name:"São Paulo", continent:"south_america", hemiNS:"south", hemiEW:"west", coastal:false, capital:false, eu:false, island:false, lang:"portuguese", pop:"mega" },
+  { name:"Buenos Aires", continent:"south_america", hemiNS:"south", hemiEW:"west", coastal:true, capital:true, eu:false, island:false, lang:"spanish", pop:"mega" },
+  { name:"Montevideo", continent:"south_america", hemiNS:"south", hemiEW:"west", coastal:true, capital:true, eu:false, island:false, lang:"spanish", pop:"mid" },
+  { name:"Lima", continent:"south_america", hemiNS:"south", hemiEW:"west", coastal:true, capital:true, eu:false, island:false, lang:"spanish", pop:"mega" },
+
+  { name:"Tokyo", continent:"asia", hemiNS:"north", hemiEW:"east", coastal:true, capital:true, eu:false, island:true, lang:"other", pop:"mega" },
+  { name:"Seoul", continent:"asia", hemiNS:"north", hemiEW:"east", coastal:false, capital:true, eu:false, island:false, lang:"other", pop:"mega" },
+  { name:"Beijing", continent:"asia", hemiNS:"north", hemiEW:"east", coastal:false, capital:true, eu:false, island:false, lang:"other", pop:"mega" },
+  { name:"Singapore", continent:"asia", hemiNS:"north", hemiEW:"east", coastal:true, capital:true, eu:false, island:true, lang:"other", pop:"mid" },
+
+  { name:"Sydney", continent:"oceania", hemiNS:"south", hemiEW:"east", coastal:true, capital:false, eu:false, island:true, lang:"english", pop:"big" },
+  { name:"Melbourne", continent:"oceania", hemiNS:"south", hemiEW:"east", coastal:true, capital:false, eu:false, island:true, lang:"english", pop:"big" },
+
+  { name:"Cairo", continent:"africa", hemiNS:"north", hemiEW:"east", coastal:false, capital:true, eu:false, island:false, lang:"other", pop:"mega" },
+  { name:"Cape Town", continent:"africa", hemiNS:"south", hemiEW:"east", coastal:true, capital:false, eu:false, island:false, lang:"english", pop:"big" },
+];
+
+// Convert a question string into a known “predicate key” we can answer
+function parseQuestionKey(qRaw) {
+  const q = (qRaw || "").toLowerCase();
+
+  // Continents
+  if (q.includes("in europe")) return "continent:europe";
+  if (q.includes("in asia")) return "continent:asia";
+  if (q.includes("in africa")) return "continent:africa";
+  if (q.includes("in north america")) return "continent:north_america";
+  if (q.includes("in south america")) return "continent:south_america";
+  if (q.includes("in oceania") || q.includes("in australia")) return "continent:oceania";
+
+  // Common attributes
+  if (q.includes("capital")) return "capital:true";
+  if (q.includes("coastal") || q.includes("on the coast") || q.includes("by the sea")) return "coastal:true";
+  if (q.includes("island")) return "island:true";
+  if (q.includes("eu")) return "eu:true";
+  if (q.includes("northern hemisphere")) return "hemiNS:north";
+  if (q.includes("southern hemisphere")) return "hemiNS:south";
+  if (q.includes("eastern hemisphere")) return "hemiEW:east";
+  if (q.includes("western hemisphere")) return "hemiEW:west";
+
+  // Language buckets
+  if (q.includes("speak english")) return "lang:english";
+  if (q.includes("speak spanish")) return "lang:spanish";
+  if (q.includes("speak french")) return "lang:french";
+  if (q.includes("speak german")) return "lang:german";
+  if (q.includes("speak italian")) return "lang:italian";
+  if (q.includes("speak portuguese")) return "lang:portuguese";
+
+  // Population buckets
+  if (q.includes("over 2m") || q.includes("over 2 m") || q.includes("metro") && q.includes("2")) return "pop:big_or_mega";
+  if (q.includes("over 10m") || q.includes("mega")) return "pop:mega";
+
+  return null;
+}
+
+function evalPredicate(cityObj, key) {
+  const [k, v] = key.split(":");
+  if (k === "continent") return cityObj.continent === v;
+  if (k === "capital") return cityObj.capital === (v === "true");
+  if (k === "coastal") return cityObj.coastal === (v === "true");
+  if (k === "eu") return cityObj.eu === (v === "true");
+  if (k === "island") return cityObj.island === (v === "true");
+  if (k === "hemiNS") return cityObj.hemiNS === v;
+  if (k === "hemiEW") return cityObj.hemiEW === v;
+  if (k === "lang") return cityObj.lang === v;
+  if (k === "pop") {
+    if (v === "mega") return cityObj.pop === "mega";
+    if (v === "big_or_mega") return cityObj.pop === "big" || cityObj.pop === "mega";
+  }
+  return false;
+}
+
+function cpuPickSecret() {
+  cpu.secret = CITY_DB[Math.floor(Math.random() * CITY_DB.length)];
+  els.p2CityStatus.textContent = "set"; // CPU city considered set
+}
+
+function cpuResetCandidates() {
+  cpu.candidates = CITY_DB.slice();
+  cpu.lastAskedKey = null;
+}
+
+// CPU chooses a question key to ask YOU (about your secret city) by splitting candidates
+function cpuChooseBestQuestionKey() {
+  const keys = [
+    "continent:europe","continent:asia","continent:africa","continent:north_america","continent:south_america","continent:oceania",
+    "capital:true","coastal:true","island:true","eu:true","hemiNS:north","hemiNS:south","hemiEW:west","hemiEW:east",
+    "lang:english","lang:spanish","lang:french","lang:german","lang:italian","lang:portuguese",
+    "pop:mega","pop:big_or_mega",
+  ];
+
+  // Remove repeats
+  const usable = keys.filter(k => k !== cpu.lastAskedKey);
+
+  // EASY: random
+  if (cpu.difficulty === "easy") {
+    return usable[Math.floor(Math.random() * usable.length)];
+  }
+
+  // MED/HARD: choose key that best splits candidates (closest to 50/50)
+  let best = usable[0], bestScore = Infinity;
+  for (const k of usable) {
+    let yes = 0;
+    for (const c of cpu.candidates) if (evalPredicate(c, k)) yes++;
+    const no = cpu.candidates.length - yes;
+    if (yes === 0 || no === 0) continue; // useless split
+    const score = Math.abs(yes - no); // closer to 0 is better
+    if (score < bestScore) { bestScore = score; best = k; }
+  }
+  return best;
+}
+
+function keyToQuestionText(key) {
+  const [k, v] = key.split(":");
+  if (k === "continent") {
+    const map = { europe:"Europe", asia:"Asia", africa:"Africa", north_america:"North America", south_america:"South America", oceania:"Oceania" };
+    return `Is your city in ${map[v]}?`;
+  }
+  if (k === "capital") return "Is your city a national capital?";
+  if (k === "coastal") return "Is your city coastal?";
+  if (k === "island") return "Is your city on an island?";
+  if (k === "eu") return "Is your city in the EU?";
+  if (k === "hemiNS") return v === "north" ? "Is your city in the Northern Hemisphere?" : "Is your city in the Southern Hemisphere?";
+  if (k === "hemiEW") return v === "west" ? "Is your city in the Western Hemisphere?" : "Is your city in the Eastern Hemisphere?";
+  if (k === "lang") return `Do most people speak ${v[0].toUpperCase()+v.slice(1)} in your city?`;
+  if (k === "pop") return v === "mega" ? "Does your city have over 10M people (mega city)?" : "Does your city have over ~2M metro population?";
+  return "Is your city ...?";
+}
+  
   // ---------------------------
   // ONLINE MODE (two phones)
   // ---------------------------
@@ -579,6 +833,35 @@
   // ---------------------------
   // Wire UI
   // ---------------------------
+  els.btnStartCPU.addEventListener("click", () => {
+  activeMode = "local";
+  cpu.enabled = true;
+  cpu.difficulty = (els.cpuDifficulty?.value || "medium");
+
+  // Setup screen, but P2 is CPU
+  showScreen("setup");
+  els.modeLabel.textContent = `CPU (${cpu.difficulty})`;
+  els.setupHint.textContent = "Set YOUR name and secret city. CPU will set its city automatically.";
+
+  // Lock P2 controls
+  els.p2Name.value = "CPU";
+  els.p2Name.disabled = true;
+  els.btnSetP2.disabled = true;
+
+  // Enable P1 controls
+  els.p1Name.disabled = false;
+  els.btnSetP1.disabled = false;
+
+  // CPU picks its secret city now
+  cpuPickSecret();
+  cpuResetCandidates();
+
+  // Require player to set their city before begin
+  els.p1CityStatus.textContent = local.p1.city ? "set" : "not set";
+  els.btnBeginGame.disabled = !local.p1.city; // only need YOUR city to begin
+});
+  
+  
   els.btnReset.addEventListener("click", resetAll);
   els.btnBackHome.addEventListener("click", () => showScreen("home"));
 
@@ -636,7 +919,11 @@
   els.btnCloseModal.addEventListener("click", closeCityModal);
 
   els.btnBeginGame.addEventListener("click", async () => {
-    if (activeMode === "local") return localBegin();
+    if (activeMode === "local") {
+      // If CPU enabled: only need player city set; CPU already has one.
+      if (cpu.enabled && !local.p1.city) return alert("Set your secret city first.");
+      return localBegin();
+    }
     if (activeMode === "online") return onlineBeginGame();
   });
 
